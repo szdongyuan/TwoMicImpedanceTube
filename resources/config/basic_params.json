@@ -1,0 +1,15 @@
+{
+    "basic_params": {
+        "soft_value": 0,
+        "input_selected_device_id": 26,
+        "input_selected_device_name": "UMC ASIO Driver",
+        "input_selected_device_type": "ASIO",
+        "input_selected_device_samplerate": "44100",
+        "input_channel_count": 4,
+        "output_selected_device_id": 26,
+        "output_selected_device_name": "UMC ASIO Driver",
+        "output_selected_device_type": "ASIO",
+        "output_selected_device_samplerate": "44100",
+        "is_clear": 0
+    }
+}
