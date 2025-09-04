@@ -701,7 +701,7 @@ class MainWindow(QMainWindow):
         else:
             print("无")
 
-        # self.plot3.plotItem.enableAutoRange(axis='xy', enable=True)
+        # self.plot3.plotItem.enableAutoRange(axis='xy', enable=True)  # X 和 Y 轴的自动范围调整
         self.plot3.plotItem.enableAutoRange(axis='y', enable=False)  # Y轴范围不变
         self.plot_state = True
 

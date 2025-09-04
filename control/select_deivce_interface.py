@@ -127,7 +127,6 @@ class SelectDeviceInterface(QDialog):
 
             input_device_index = input_device['index']
             output_device_index = output_device['index']
-            print(input_device_index, output_device_index)
 
             input_device_name = input_device['name']
             output_device_name = output_device['name']
@@ -144,6 +143,8 @@ class SelectDeviceInterface(QDialog):
             utils.save_selected_devices(input_device_index, output_device_index, input_device_name, output_device_name,
                                         input_type, output_type, input_samplerate, output_samplerate,
                                         input_channel_count)
+            # 重载json
+            utils.refresh_mic_config_json(self)
             QMessageBox.information(self, "成功", "输入输出设备保存成功！")
         except Exception as e:
             self.logger.error(f"设置默认输入输出设备失败: {e}")

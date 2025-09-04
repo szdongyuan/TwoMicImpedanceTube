@@ -1,6 +1,6 @@
 import json
 import os
-from concurrent import futures
+import re
 
 import numpy as np
 import sounddevice as sd
@@ -60,7 +60,7 @@ class MicoutputVoltageInterface(QDialog):
         self.cal_button.clicked.connect(self.clicked_calibration_button)
         # 输入界面初始化
         self.standard_spl_i.setChecked(True)
-        self.init_channel_combobox_and_init_json()
+        self.init_channel_combobox()
         self.save_mic_button.clicked.connect(self.save_mic_deviation_value)
 
     def get_calibration_param(self):
@@ -212,9 +212,9 @@ class MicoutputVoltageInterface(QDialog):
         self.save_button.setEnabled(False)
 
 #=========================================================================================
-    def init_channel_combobox_and_init_json(self):
+    def init_channel_combobox(self):
         """
-        初始化channel_number下拉框 并且初始化mic_calibration.json文件
+        初始化channel_number下拉框
         """
         try:
             config_path = utils.get_config_path("basic_params.json")
@@ -228,31 +228,6 @@ class MicoutputVoltageInterface(QDialog):
             for i in range(1, count  + 1):
                 self.ui.channel_number.addItem(f"In{i}", i)
             self.ui.channel_number.setCurrentIndex(0)
-
-            mic_json_path = utils.get_config_path("mic_calibration.json")
-            if config["basic_params"]["is_clear"] == 1:
-                # 按 count 生成 { "In1": {...}, ..., "InN": {...} }
-                mic_cfg = {
-                    f"In{i}": {
-                        "deviation_value": "0",
-                        "binding_index": i - 1
-                    }
-                    for i in range(1, count + 1)
-                }
-                if count == 0:
-                    mic_cfg = {}
-                with open(mic_json_path, "w", encoding="utf-8") as file:
-                    json.dump(mic_cfg, file, ensure_ascii=False, indent=4)
-                config["basic_params"]["is_clear"] = 0
-                with open(config_path, "w", encoding="utf-8") as f:
-                    json.dump(config, f, ensure_ascii=False, indent=4)
-                print(f"is_clear=1，已按通道数({count})重建 mic_calibration.json -> {mic_json_path}")
-                self.logger.info(
-                    f"is_clear=1，已按通道数({count})重建 mic_calibration.json -> {mic_json_path}"
-                )
-            else:
-                print("is_clear=0，mic_calibration.json 保持不变")
-                self.logger.info("is_clear=0，mic_calibration.json 保持不变")
 
         except Exception as e:
             self.logger.warning(f"初始化下拉框失败: {e}")
@@ -282,23 +257,18 @@ class MicoutputVoltageInterface(QDialog):
                          }
         # 获取下拉框通道数据
         channel_number_text = self.channel_number.currentText()
-        print(f"通道下拉框_text:{channel_number_text}")
         res, config = utils.get_config_content("mic_calibration.json")
-        print(res,config)
         if res:
             channel_index = config[channel_number_text]["binding_index"]
-            print(f"通道下标:{channel_index}")
         else:
             QMessageBox.critical(self, "错误", f"校准失败：mic_calibration.json导入错误")
             self.logger.error(f"校准失败：mic_calibration.json导入错误")
             self.record_state.setText("待录制")
             self.record_state.setStyleSheet("color: rgb(255, 170, 0);")
             return
-        print(channel_index)
         self.average_value = self.calculate_average_spl(recorded_dict, channel_index)
         deviation_value = self.calculate_deviation(self.average_value)
-        print(f"result实测：{self.average_value} , 偏差值{deviation_value}")
-        self.deviation_lineedit.setText(str(deviation_value))
+        self.deviation_lineedit.setText(f"{deviation_value} dBSPL")
         if str(deviation_value) == "inf":
             QMessageBox.critical(self, "错误", f"校准失败：偏差值为{deviation_value}")
             self.logger.error(f"校准失败：偏差值为{deviation_value}")
@@ -323,7 +293,6 @@ class MicoutputVoltageInterface(QDialog):
         step = 100
         if rec_code == True:
             spl_smooth = AudioThdFrequencyResponseAnalysis().spl_calculation(recorded_data)
-            print(spl_smooth)
             spl_smooth_mid = len(spl_smooth) // 2
             spl_smooth_start = spl_smooth_mid - step
             spl_smooth_end = spl_smooth_mid + step
@@ -337,11 +306,9 @@ class MicoutputVoltageInterface(QDialog):
         计算偏差值
         """
         if self.standard_spl_i.isChecked():
-            print("94选中")
-            deviation_value = round(94 - average_value, 3)
+            deviation_value = round(94 - average_value, 1)
         else:
-            print("114选中")
-            deviation_value = round(114 - average_value, 3)
+            deviation_value = round(114 - average_value, 1)
         return deviation_value
 
     def save_mic_deviation_value(self):
@@ -353,6 +320,10 @@ class MicoutputVoltageInterface(QDialog):
         if not deviation_lineedit_text:
             QMessageBox.warning(self, "警告", "请先校准Mic！")
             return
+            # 提取数字部分
+        deviation_match = re.findall(r"[-+]?\d*\.?\d+", deviation_lineedit_text)
+        deviation_match = deviation_match[0] if deviation_match else deviation_lineedit_text
+
         channel_config_path = utils.get_config_path("mic_calibration.json")
         try:
             with open(channel_config_path, "r", encoding="utf-8") as f:
@@ -360,13 +331,11 @@ class MicoutputVoltageInterface(QDialog):
 
             # 检查选中的麦克风是否在配置文件中
             if selected_channel in channel_config:
-                channel_config[selected_channel]['deviation_value'] = deviation_lineedit_text
-                print(f"更新 {selected_channel} 的偏差值为 {deviation_lineedit_text}")
-
+                channel_config[selected_channel]['deviation_value'] = deviation_match
                 with open(channel_config_path, "w", encoding="utf-8") as f:
                     json.dump(channel_config, f, ensure_ascii=False, indent=4)
-                    self.logger.info(f"成功保存 {selected_channel} 的偏差值 {deviation_lineedit_text}")
-                    QMessageBox.information(self, "成功", f"保存成功！{selected_channel} 的偏差值 {deviation_lineedit_text}！")
+                    self.logger.info(f"成功保存 {selected_channel} 的偏差值 {deviation_match}")
+                    QMessageBox.information(self, "成功", f"保存成功！{selected_channel} 的偏差值 {deviation_match}！")
             else:
                 QMessageBox.warning(self, "错误", f"配置中未找到 {selected_channel} 的相关数据")
         except Exception as e:

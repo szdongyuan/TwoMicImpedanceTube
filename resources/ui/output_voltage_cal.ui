@@ -398,18 +398,18 @@
                </property>
                <property name="minimumSize">
                 <size>
-                 <width>60</width>
+                 <width>80</width>
                  <height>26</height>
                 </size>
                </property>
                <property name="maximumSize">
                 <size>
-                 <width>60</width>
+                 <width>80</width>
                  <height>26</height>
                 </size>
                </property>
                <property name="text">
-                <string>94 dB</string>
+                <string> 94 dB</string>
                </property>
               </widget>
              </item>
@@ -417,13 +417,13 @@
               <widget class="QRadioButton" name="standard_spl_ii">
                <property name="minimumSize">
                 <size>
-                 <width>60</width>
+                 <width>80</width>
                  <height>26</height>
                 </size>
                </property>
                <property name="maximumSize">
                 <size>
-                 <width>60</width>
+                 <width>80</width>
                  <height>26</height>
                 </size>
                </property>
@@ -431,7 +431,7 @@
                 <enum>Qt::LeftToRight</enum>
                </property>
                <property name="text">
-                <string>114 dB</string>
+                <string> 114 dB</string>
                </property>
               </widget>
              </item>
@@ -448,18 +448,18 @@
               <widget class="QLabel" name="label_3">
                <property name="minimumSize">
                 <size>
-                 <width>60</width>
+                 <width>80</width>
                  <height>26</height>
                 </size>
                </property>
                <property name="maximumSize">
                 <size>
-                 <width>60</width>
+                 <width>80</width>
                  <height>26</height>
                 </size>
                </property>
                <property name="text">
-                <string>录制状态：</string>
+                <string> 录制状态：</string>
                </property>
               </widget>
              </item>
@@ -470,13 +470,13 @@
                </property>
                <property name="minimumSize">
                 <size>
-                 <width>60</width>
+                 <width>80</width>
                  <height>26</height>
                 </size>
                </property>
                <property name="maximumSize">
                 <size>
-                 <width>60</width>
+                 <width>80</width>
                  <height>26</height>
                 </size>
                </property>
@@ -503,18 +503,18 @@
                 <widget class="QLabel" name="label_2">
                  <property name="minimumSize">
                   <size>
-                   <width>60</width>
+                   <width>80</width>
                    <height>26</height>
                   </size>
                  </property>
                  <property name="maximumSize">
                   <size>
-                   <width>60</width>
+                   <width>80</width>
                    <height>26</height>
                   </size>
                  </property>
                  <property name="text">
-                  <string>声压偏差：</string>
+                  <string> 声压偏差：</string>
                  </property>
                 </widget>
                </item>
@@ -525,13 +525,13 @@
                  </property>
                  <property name="minimumSize">
                   <size>
-                   <width>60</width>
+                   <width>80</width>
                    <height>26</height>
                   </size>
                  </property>
                  <property name="maximumSize">
                   <size>
-                   <width>60</width>
+                   <width>80</width>
                    <height>26</height>
                   </size>
                  </property>
@@ -546,15 +546,21 @@
               <layout class="QHBoxLayout" name="horizontalLayout_9">
                <item>
                 <widget class="QComboBox" name="channel_number">
+                 <property name="sizePolicy">
+                  <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
+                  </sizepolicy>
+                 </property>
                  <property name="minimumSize">
                   <size>
-                   <width>60</width>
+                   <width>80</width>
                    <height>26</height>
                   </size>
                  </property>
                  <property name="maximumSize">
                   <size>
-                   <width>60</width>
+                   <width>80</width>
                    <height>26</height>
                   </size>
                  </property>
@@ -573,13 +579,13 @@
                  </property>
                  <property name="minimumSize">
                   <size>
-                   <width>60</width>
+                   <width>80</width>
                    <height>26</height>
                   </size>
                  </property>
                  <property name="maximumSize">
                   <size>
-                   <width>60</width>
+                   <width>80</width>
                    <height>26</height>
                   </size>
                  </property>
@@ -606,6 +612,22 @@
       <item>
        <layout class="QHBoxLayout" name="horizontalLayout_4">
         <item>
+         <spacer name="horizontalSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Fixed</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>70</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
          <widget class="QToolButton" name="cal_button">
           <property name="enabled">
            <bool>true</bool>
@@ -618,13 +640,13 @@
           </property>
           <property name="minimumSize">
            <size>
-            <width>50</width>
+            <width>70</width>
             <height>0</height>
            </size>
           </property>
           <property name="maximumSize">
            <size>
-            <width>50</width>
+            <width>70</width>
             <height>16777215</height>
            </size>
           </property>
@@ -640,6 +662,22 @@
          </widget>
         </item>
         <item>
+         <spacer name="horizontalSpacer_2">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Fixed</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>50</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
          <widget class="QToolButton" name="reset_button">
           <property name="enabled">
            <bool>true</bool>
@@ -652,13 +690,13 @@
           </property>
           <property name="minimumSize">
            <size>
-            <width>50</width>
+            <width>70</width>
             <height>0</height>
            </size>
           </property>
           <property name="maximumSize">
            <size>
-            <width>50</width>
+            <width>70</width>
             <height>16777215</height>
            </size>
           </property>
@@ -672,6 +710,22 @@
            <string>重置</string>
           </property>
          </widget>
+        </item>
+        <item>
+         <spacer name="horizontalSpacer_3">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeType">
+           <enum>QSizePolicy::Fixed</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>70</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
         </item>
        </layout>
       </item>

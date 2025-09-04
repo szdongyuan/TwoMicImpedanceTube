@@ -423,7 +423,7 @@ def init_selected_devide():
                 raise RuntimeError("找不到匹配的输入或输出设备，请重新选择")
 
     except Exception as e:
-            logger.warning(f"读取或匹配 basic_params.json 失败: {e}")
+        logger.error(f"读取或匹配 basic_params.json 失败: {e}")
 
 
 def save_selected_devices(input_device_index, output_device_index, input_device_name, output_device_name, input_type,
@@ -463,9 +463,45 @@ def save_selected_devices(input_device_index, output_device_index, input_device_
         # 写入文件
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
-
     except Exception as e:
         raise RuntimeError(f"保存 selected_devices 到 basic_params.json 失败: {e}")
+
+def refresh_mic_config_json(obj):
+    try:
+        config_path = get_config_path("basic_params.json")
+
+        # 如果文件不存在，直接报错
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"配置文件不存在: {config_path}")
+
+        # 加载配置文件
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            count = config["basic_params"]["input_channel_count"]
+        mic_json_path = get_config_path("mic_calibration.json")
+        if config["basic_params"]["is_clear"] == 1:
+            # 按 count 生成 { "In1": {...}, ..., "InN": {...} }
+            mic_cfg = {
+                f"In{i}": {
+                    "deviation_value": "0",
+                    "binding_index": i - 1
+                }
+                for i in range(1, count + 1)
+            }
+            if count == 0:
+                mic_cfg = {}
+            with open(mic_json_path, "w", encoding="utf-8") as file:
+                json.dump(mic_cfg, file, ensure_ascii=False, indent=4)
+            config["basic_params"]["is_clear"] = 0
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=4)
+            obj.logger.info(
+                f"is_clear=1，已按通道数({count})重建 mic_calibration.json -> {mic_json_path}"
+            )
+        else:
+            obj.logger.info("is_clear=0，mic_calibration.json 保持不变")
+    except Exception as e:
+        raise RuntimeError(f"重载mic_calibration.json 失败: {e}")
 
 
 def custom_log_tick_strings(values, scale, spacing):
