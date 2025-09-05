@@ -266,7 +266,14 @@ class MicoutputVoltageInterface(QDialog):
             self.record_state.setText("待录制")
             self.record_state.setStyleSheet("color: rgb(255, 170, 0);")
             return
+        # 计算平均声压级（SPL）
         self.average_value = self.calculate_average_spl(recorded_dict, channel_index)
+        if self.average_value is None:
+            self.record_state.setText("待录制")
+            self.record_state.setStyleSheet("color: rgb(255, 170, 0);")
+            QtWidgets.QApplication.processEvents()
+            return
+        # 计算偏差值
         deviation_value = self.calculate_deviation(self.average_value)
         self.deviation_lineedit.setText(f"{deviation_value} dBSPL")
         if str(deviation_value) == "inf":
@@ -299,6 +306,12 @@ class MicoutputVoltageInterface(QDialog):
             spl_sample = spl_smooth[spl_smooth_start:spl_smooth_end]
             self.average_value = np.sum(spl_sample) / (step * 2)
             return self.average_value
+        else:
+            # recorded_data 这里其实是错误信息字符串
+            err_msg = recorded_data
+            QMessageBox.critical(self, "录音错误", err_msg)
+            self.logger.error(err_msg)
+            return None
 
 
     def calculate_deviation(self, average_value):

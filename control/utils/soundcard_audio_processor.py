@@ -1,6 +1,4 @@
-import numpy as np
 import sounddevice as sd
-from scipy.io import wavfile
 
 from control.log_manager import LogManager
 
@@ -32,14 +30,16 @@ class SoundcardAudioProcessor(object):
         channels = recorded_dict.get("channels", 1)
         blocking = recorded_dict.get("blocking", True)
         prolong_frames = recorded_dict.get("prolong_frames", 0)
-        # 使用 sounddevice 录音，返回的数据 shape 为 (frames, channels)，这里取第一个通道并转置
-        recorded_data = sd.rec(frames=num_frames, samplerate=sample_rate, channels=channels, blocking=blocking)
-        print(recorded_data)
-        print(channel_index)
-        recorded_data = recorded_data.T[channel_index]
-        print(f"recorded_data:{recorded_data}")
-        # 如果设置了丢弃帧数，就丢掉前面的部分
-        if prolong_frames > 0:
-            recorded_data = recorded_data[prolong_frames:]
-
-        return True, recorded_data
+        try:
+            # 使用 sounddevice 录音，返回的数据 shape 为 (frames, channels)，这里取第一个通道并转置
+            recorded_data = sd.rec(frames=num_frames, samplerate=sample_rate, channels=channels, blocking=blocking)
+            recorded_data = recorded_data.T[channel_index]
+            print(f"recorded_data:{recorded_data}")
+            # 如果设置了丢弃帧数，就丢掉前面的部分
+            if prolong_frames > 0:
+                recorded_data = recorded_data[prolong_frames:]
+            return True, recorded_data
+        except Exception as e:
+            # 捕获 sounddevice 报错，返回友好信息
+            err_msg = f"录音失败: {str(e)}"
+            return False, err_msg
