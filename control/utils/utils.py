@@ -378,7 +378,8 @@ def init_selected_devide():
     try:
         config_path = get_config_path("basic_params.json")
         if not os.path.exists(config_path):
-            raise FileNotFoundError("配置文件不存在")
+            logger.critical(f"配置文件{config_path}不存在")
+            raise FileNotFoundError(f"配置文件{config_path}不存在")
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
@@ -420,10 +421,11 @@ def init_selected_devide():
                 sd.default.device = (input_index, output_index)
                 logger.info(f"已设置默认输入输出设备: {input_index}, {output_index}")
             else:
+                logger.critical(f"找不到匹配的输入或输出设备，请重新选择")
                 raise RuntimeError("找不到匹配的输入或输出设备，请重新选择")
 
     except Exception as e:
-        logger.error(f"读取或匹配 basic_params.json 失败: {e}")
+        QMessageBox.warning(None, "初始化设备失败", f"{e}")
 
 
 def save_selected_devices(input_device_index, output_device_index, input_device_name, output_device_name, input_type,

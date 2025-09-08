@@ -10,8 +10,8 @@ from control.window import MainWindow
 
 if __name__ == '__main__':
     utils.copy_all_configs_to_base_dir()
-    utils.init_selected_devide()
     app = QApplication(sys.argv)
+    utils.init_selected_devide()
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())

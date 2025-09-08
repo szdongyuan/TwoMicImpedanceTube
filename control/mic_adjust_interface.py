@@ -227,7 +227,7 @@ class MicAdjustInterface(QDialog):
                 if binding_index_2 == 999:
                     raise ValueError("In2 没有绑定数据下标")
         except Exception as e:
-            raise ValueError(f"读取麦克风校准json文件失败,原因：{e}")
+            raise ValueError(f"获取通道对应的位置index失败,原因：{e}")
 
         mic1_data = recording[:, binding_index_1]
         mic2_data = recording[:, binding_index_2]
