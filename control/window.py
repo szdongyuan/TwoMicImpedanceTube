@@ -431,9 +431,8 @@ class MainWindow(QMainWindow):
                 raise ValueError(f"{msg}")
 
             info = sd.query_devices(sd.default.device[0], 'input')
-            max_input_channels = info['max_input_channels']
-            print(f"最大输入通道数: {max_input_channels}")
-            channels = min(2, max_input_channels)
+            channels = info['max_input_channels']
+            print(f"最大输入通道数: {channels}")
 
             # 开始录音 (多声道)
             self.logger.info("开始录音 2个MIC...")

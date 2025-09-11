@@ -347,7 +347,24 @@ def get_config_content(filename):
     except Exception:
         return False, None
 
-
+def write_config_content(filename, config):
+    """
+    将更新后的配置内容保存回文件。
+    参数:
+        filename (str): 配置文件名，例如 "mic_calibration.json"
+        config (dict): 要保存的配置字典
+    返回:
+        - True : 保存成功
+        - False : 保存失败
+    """
+    path = get_config_path(filename)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"写入文件失败: {e}")
+        return False
 
 def get_device_info():
     """获取选择设备的详细信息"""
@@ -450,7 +467,12 @@ def save_selected_devices(input_device_index, output_device_index, input_device_
         if "basic_params" not in config:
             raise KeyError("配置文件缺少 'basic_params' 字段")
         # 更新设备信息
-        if config["basic_params"]["input_selected_device_id"] != input_device_index:
+        if (
+                config["basic_params"].get("input_selected_device_id") != input_device_index
+                or config["basic_params"].get("input_selected_device_name") != input_device_name
+                or config["basic_params"].get("input_selected_device_type") != input_type
+                or config["basic_params"].get("input_selected_device_samplerate") != input_samplerate
+        ):
             config["basic_params"]["is_clear"] = 1  # 1是清空mic_cal.json
         config["basic_params"]["input_selected_device_id"] = input_device_index
         config["basic_params"]["input_selected_device_name"] = input_device_name
