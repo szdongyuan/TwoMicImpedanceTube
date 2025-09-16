@@ -36,7 +36,7 @@ class ImptubeParamsSetInterface(QDialog):
     def init_images(self):
         # 加载图片
         scene = QGraphicsScene()
-        pixmap = QPixmap(":/images/薄层首页.png")
+        pixmap = QPixmap(":/images/2mic薄层_画板.png")
         scaled_pixmap = pixmap.scaled(390, 282, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         pixmap_item = QGraphicsPixmapItem(scaled_pixmap)
         scene.addItem(pixmap_item)

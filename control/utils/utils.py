@@ -280,7 +280,7 @@ def smooth_data(data, window_length=51, polyorder=3):
 
 
 def copy_all_configs_to_base_dir():
-    logger = LogManager.set_log_handler("阻抗管参数设置")
+    logger = LogManager.set_log_handler("拷贝配置文件")
     # 创建目录
     target_config_dir = os.path.join(base_dir, "resources", "config")
     os.makedirs(target_config_dir, exist_ok=True)
@@ -399,7 +399,6 @@ def init_selected_devide():
             raise FileNotFoundError(f"配置文件{config_path}不存在")
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
-
             input_name = config["basic_params"]["input_selected_device_name"]
             input_type = config["basic_params"]["input_selected_device_type"]
             input_rate = config["basic_params"]["input_selected_device_samplerate"]

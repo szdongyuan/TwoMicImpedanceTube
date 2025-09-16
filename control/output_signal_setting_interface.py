@@ -51,11 +51,7 @@ class OutputSignalSetInterface(QDialog):
         self.plot.setLabel('left', 'Amplitude', units='V')
         self.plot.getAxis('bottom').setTextPen("black")
         self.plot.getAxis('left').setTextPen("black")
-        # 画点啥试试
-        x = [0, 1, 2, 3, 4]
-        y = [10, 1, 12, 4, 7]
-        self.plot.plot(x, y, pen='b')
-        self.plot.clear()
+        self.plot.showGrid(x=True, y=True, alpha=0.25)
 
     def init_fun(self):
         self.update_view.clicked.connect(self.graph_signal)

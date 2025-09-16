@@ -49,14 +49,14 @@ class MicAdjustInterface(QDialog):
 
     def init_images(self):
         scene = QGraphicsScene()
-        pixmap = QPixmap(":/images/薄层校准.png")
+        pixmap = QPixmap(":/images/2mic薄层校准_画板.png")
         scaled_pixmap = pixmap.scaled(400, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         pixmap_item = QGraphicsPixmapItem(scaled_pixmap)
         scene.addItem(pixmap_item)
         self.graphicsView.setScene(scene)
 
         scene_2 = QGraphicsScene()
-        pixmap_2 = QPixmap(":/images/薄层首页.png")
+        pixmap_2 = QPixmap(":/images/2mic薄层_画板.png")
         scaled_pixmap_2 = pixmap_2.scaled(400, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         pixmap_item_2 = QGraphicsPixmapItem(scaled_pixmap_2)
         scene_2.addItem(pixmap_item_2)

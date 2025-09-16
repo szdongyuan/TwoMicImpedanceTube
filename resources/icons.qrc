@@ -1,5 +1,7 @@
 <RCC>
   <qresource>
+    <file>images/2mic薄层_画板.png</file>
+    <file>images/2mic薄层校准_画板.png</file>
     <file>images/folder.png</file>
     <file>images/dongyuan.png</file>
     <file>images/green.png</file>
