@@ -2,7 +2,8 @@ import sounddevice as sd
 from PyQt5 import QtWidgets, sip
 from PyQt5.QtGui import QStandardItemModel, QStandardItem
 from PyQt5.QtCore import QFile, Qt
-from PyQt5.QtWidgets import QDialog, QMessageBox, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton
+from PyQt5.QtWidgets import QDialog, QMessageBox, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, \
+    QHeaderView
 from PyQt5.uic import loadUi
 from control.log_manager import LogManager
 from control.utils import utils
@@ -36,13 +37,23 @@ class SelectDeviceInterface(QDialog):
 
     def init_fun(self):
         self.save_all_button.clicked.connect(self.save_all_device_settings)
-        self.comboBox.setMinimumWidth(300)
-        self.comboBox_2.setMinimumWidth(300)
+        self.refresh_devices.clicked.connect(self.refresh_device_list)
+        self.comboBox.setMinimumWidth(350)
+        self.comboBox_2.setMinimumWidth(350)
         # 加永久布局
         self.groupBox_4 = self.findChild(QGroupBox, 'groupBox_4')
         self.channels_layout = QVBoxLayout(self.groupBox_4)
         self.groupBox_4.setLayout(self.channels_layout)
         self.groupBox_4.setFixedWidth(140)
+
+    def refresh_device_list(self):
+        # 刷新设备列表
+        self.logger.info("正在刷新设备列表...并初始化设备...")
+        sd._terminate()  # 终止当前的设备实例
+        sd._initialize()  # 重新初始化设备
+        utils.init_selected_devide()
+        self.select_devices()  # 重新显示设备
+        self.logger.info("设备列表刷新完毕")
 
     def select_devices(self):
         self.device_list = sd.query_devices()
@@ -50,19 +61,18 @@ class SelectDeviceInterface(QDialog):
 
         # 输出设备
         self.comboBox.clear()
-        default_output_index = None
-        try:
-            default_output_index = sd.default.device[1]
-        except Exception as e:
-            self.logger.warning(f"无法获取默认输出设备: {e}")
-
+        self.comboBox.addItem("请选择输出设备")
+        hint_index = self.comboBox.count() - 1
+        hint_item = self.comboBox.model().item(hint_index)
+        hint_item.setEnabled(False)  # 禁用点击
+        hint_item.setForeground(Qt.gray)  # 设置灰色文字
         # 输入设备
         self.comboBox_2.clear()
-        default_input_index = None
-        try:
-            default_input_index = sd.default.device[0]
-        except Exception as e:
-            self.logger.warning(f"无法获取默认输入设备: {e}")
+        self.comboBox_2.addItem("请选择输入设备")
+        hint_index2 = self.comboBox_2.count() - 1
+        hint_item2 = self.comboBox_2.model().item(hint_index2)
+        hint_item2.setEnabled(False)  # 禁用点击
+        hint_item2.setForeground(Qt.gray)  # 设置灰色文字
 
         model = QStandardItemModel()
         model.setHorizontalHeaderLabels(["序号", "名称", "输入通道", "输出通道", "驱动类型", "采样率"])
@@ -71,6 +81,9 @@ class SelectDeviceInterface(QDialog):
             hostapi_index = device['hostapi']
             hostapi_name = hostapis[hostapi_index]['name']
             display_name = f"{device['name']} ({hostapi_name})"
+            display_name_with_channels = (f'{display_name} [OUT: {device["max_output_channels"]}, '
+                                          f'IN: {device["max_input_channels"]}]')
+
             samplerate = device.get("default_samplerate", "N/A")
             if isinstance(samplerate, float):
                 samplerate = f"{int(samplerate)} Hz"
@@ -84,6 +97,10 @@ class SelectDeviceInterface(QDialog):
                 QStandardItem(hostapi_name),
                 QStandardItem(str(samplerate))
             ]
+            # 给名称列设置 tooltip
+            row_items[1].setToolTip(display_name)
+            row_items[4].setToolTip(hostapi_name)
+
             for item in row_items:
                 item.setEditable(False)
                 item.setTextAlignment(Qt.AlignCenter)
@@ -91,29 +108,34 @@ class SelectDeviceInterface(QDialog):
 
             # 输出设备填充
             if device["max_output_channels"] > 0:
-                self.comboBox.addItem(f"{index}: {display_name}", index)
+                self.comboBox.addItem(f"{index}: {display_name_with_channels}", index)
 
             # 输入设备填充
             if device["max_input_channels"] > 0:
-                self.comboBox_2.addItem(f"{index}: {display_name}", index)
+                self.comboBox_2.addItem(f"{index}: {display_name_with_channels}", index)
 
-        # 设置默认选中
-        for i in range(self.comboBox.count()):
-            if self.comboBox.itemData(i) == default_output_index:
+        found_out = False
+        # 输出
+        for i in range(1, self.comboBox.count()): # 从 1 开始，跳过提示项
+            if self.comboBox.itemData(i) == sd.default.device[1]:
                 self.comboBox.setCurrentIndex(i)
+                found_out = True
                 break
-
-        for i in range(self.comboBox_2.count()):
-            if self.comboBox_2.itemData(i) == default_input_index:
+        if not found_out:
+            pass
+            self.comboBox.setCurrentIndex(0)
+        found_in = False
+        for i in range(1, self.comboBox_2.count()):
+            if self.comboBox_2.itemData(i) == sd.default.device[0]:
                 self.comboBox_2.setCurrentIndex(i)
+                found_in = True
                 break
+        if not found_in:
+            pass
+            self.comboBox_2.setCurrentIndex(0)
 
         self.tableView.setModel(model)
-        self.tableView.resizeColumnsToContents()
-        self.tableView.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.tableView.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.tableView.horizontalHeader().setStretchLastSection(True)
-        self.tableView.verticalHeader().setVisible(False)
+        self._apply_table_sizing()
         # 自动加载通道
         self.load_channels()
 
@@ -255,6 +277,24 @@ class SelectDeviceInterface(QDialog):
                 self.logger.error(f"保存通道设置失败: {e}")
         else:
             QMessageBox.critical(self, "读取失败", "无法读取配置文件内容 mic_calibration.json！")
+
+    def _apply_table_sizing(self):
+        """按比例设置列宽，名称列吃掉剩余空间"""
+        header = self.tableView.horizontalHeader()
+        header.setStretchLastSection(False)
+
+        # 各列固定宽度（可以根据你截图里的效果调整数值）
+        self.tableView.setColumnWidth(0, 40)  # 序号
+        self.tableView.setColumnWidth(2, 60)  # 输入通道
+        self.tableView.setColumnWidth(3, 60)  # 输出通道
+        self.tableView.setColumnWidth(4, 180)  # 驱动类型
+        self.tableView.setColumnWidth(5, 100)  # 采样率
+
+        header.setSectionResizeMode(1, QHeaderView.Stretch)  # 名称填充
+
+        self.tableView.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)  # 居中
+        self.tableView.verticalHeader().setVisible(False)  # 行号不可见
+        self.tableView.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)  # 整行高亮
 
     def closeEvent(self, event):
         if self.parent:

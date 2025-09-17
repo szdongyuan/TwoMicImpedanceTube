@@ -438,7 +438,7 @@ def init_selected_devide():
                 logger.info(f"已设置默认输入输出设备: {input_index}, {output_index}")
             else:
                 logger.critical(f"找不到匹配的输入或输出设备，请重新选择")
-                raise RuntimeError("找不到匹配的输入或输出设备，请重新选择")
+                raise RuntimeError("提示：默认设备已改变, 请重新选择设备！")
 
     except Exception as e:
         QMessageBox.warning(None, "初始化设备失败", f"{e}")
