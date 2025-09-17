@@ -122,7 +122,6 @@ class SelectDeviceInterface(QDialog):
                 found_out = True
                 break
         if not found_out:
-            pass
             self.comboBox.setCurrentIndex(0)
         found_in = False
         for i in range(1, self.comboBox_2.count()):
@@ -131,7 +130,6 @@ class SelectDeviceInterface(QDialog):
                 found_in = True
                 break
         if not found_in:
-            pass
             self.comboBox_2.setCurrentIndex(0)
 
         self.tableView.setModel(model)
