@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
         font.setPointSize(12)
         self.plot3.getAxis('bottom').setTickFont(font)
         self.plot3.getAxis('left').setTickFont(font)
-        self.plot3.setLabel('left', 'Amplitude', units='Rayl')
+        self.plot3.setLabel('left', 'Z abs', units='Rayl')
         self.plot3.setLabel('bottom', 'Freq', units='Hz')
         self.plot3.getAxis('bottom').setTextPen("black")
         self.plot3.getAxis('left').setTextPen("black")
@@ -194,13 +194,13 @@ class MainWindow(QMainWindow):
             elif plot_type == "传输阻抗率Z Im":
                 freq_array = np.asarray(self.test_result["ff"], dtype=float)
                 y_array = np.abs(self.test_result["Z_Im"])
-            elif plot_type == "流速v abs":
+            elif plot_type == "质点速度v abs":
                 freq_array = np.asarray(self.test_result["f"], dtype=float)
                 y_array = self.test_result["V_abs"]
-            elif plot_type == "流速v Re":
+            elif plot_type == "质点速度v Re":
                 freq_array = np.asarray(self.test_result["f"], dtype=float)
                 y_array = self.test_result["V_Re"]
-            elif plot_type == "流速v Im":
+            elif plot_type == "质点速度v Im":
                 freq_array = np.asarray(self.test_result["f"], dtype=float)
                 y_array = self.test_result["V_Im"]
             else:
@@ -430,31 +430,29 @@ class MainWindow(QMainWindow):
             if result is False:
                 raise ValueError(f"{msg}")
 
-            info = sd.query_devices(sd.default.device[0], 'input')
-            channels = info['max_input_channels']
-            print(f"最大输入通道数: {channels}")
+            input_channels = sd.query_devices(sd.default.device[0], 'input')['max_input_channels']
+            output_channels = sd.query_devices(sd.default.device[1], 'output')['max_output_channels']
+            print(f"最大输入通道数: {input_channels},输出通道: {output_channels}")
+            self.logger.info(f"最大输入通道数: {input_channels},输出通道: {output_channels}")
 
-            # 开始录音 (多声道)
-            self.logger.info("开始录音 2个MIC...")
+            # 把激励信号data转化成 多维数组
             stimulus_data = np.asarray(data, dtype=np.float32)
-
-            if channels == 1:
-                stimulus_data = stimulus_data
-            else:
-                stimulus_data = np.column_stack([stimulus_data] * channels)
+            if output_channels > 1:
+                stimulus_data = np.column_stack([stimulus_data] * output_channels)
 
             self.logger.info("开始播放并录音...")
-            recording = sd.playrec(stimulus_data, samplerate=samplerate, channels=channels, blocking=True)
+            # stimulus_data代表的是输出的2维激励信号, channels代表的是录音时的输入通道数,这里是 6 个通道
+            recording = sd.playrec(stimulus_data, samplerate=samplerate, channels=input_channels, blocking=True)
             self.logger.info("录音完成")
 
             # 处理录音数据
             mic1_data, mic2_data, real_spl1, real_spl2 = MicAdjustInterface.process_mic_channels_data(recording)
-            if real_spl1 > 120:
-                self.logger.error(f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
-                QMessageBox.warning(self, "警告", f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
-            if real_spl2 > 120:
-                self.logger.error(f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {120} dB，已饱和")
-                QMessageBox.warning(self, "警告", f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {120} dB，已饱和")
+            if real_spl1 > 140:
+                self.logger.error(f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {140} dB，已饱和")
+                QMessageBox.warning(self, "警告", f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {140} dB，已饱和")
+            if real_spl2 > 140:
+                self.logger.error(f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {140} dB，已饱和")
+                QMessageBox.warning(self, "警告", f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {140} dB，已饱和")
 
             # 创建采集保存目录
             save_dir = os.path.join(os.getcwd(), "！采集")
@@ -594,17 +592,17 @@ class MainWindow(QMainWindow):
             return  # 用户取消
 
         try:
-            file1 = os.path.join(save_dir, "传输阻抗测试结果.csv")
+            file1 = os.path.join(save_dir, "传输阻抗率测试结果.csv")
             with open(file1, "w", newline='', encoding='utf-8-sig') as f:
                 writer = csv.writer(f)
-                writer.writerow(["line_ff", "line_Z_abs", "line_Z_Re", "line_Z_Im"])
+                writer.writerow(["ff", "Z_abs", "Z_Re", "Z_Im"])
                 for i in range(len(line_ff)):
                     writer.writerow([line_ff[i], Z_abs[i], Z_Re[i], Z_Im[i]])
 
-            file2 = os.path.join(save_dir, "流速测试结果.csv")
+            file2 = os.path.join(save_dir, "质点速度测试结果.csv")
             with open(file2, "w", newline='', encoding='utf-8-sig') as f:
                 writer = csv.writer(f)
-                writer.writerow(["line_f", "line_V_abs", "line_V_Re", "line_V_Im"])
+                writer.writerow(["f", "v_abs", "v_Re", "v_Im"])
                 for i in range(len(line_f)):
                     writer.writerow([line_f[i], V_abs[i], V_Re[i], V_Im[i]])
 
@@ -625,11 +623,11 @@ class MainWindow(QMainWindow):
             self.plot3.setLabel('left', 'Z Re', units='Rayl')
         elif text == "传输阻抗率Z Im":
             self.plot3.setLabel('left', 'Z Im', units='Rayl')
-        elif text == "流速v abs":
+        elif text == "质点速度v abs":
             self.plot3.setLabel('left', 'v abs', units='m/s')
-        elif text == "流速v Re":
+        elif text == "质点速度v Re":
             self.plot3.setLabel('left', 'v Re', units='m/s')
-        elif text == "流速v Im":
+        elif text == "质点速度v Im":
             self.plot3.setLabel('left', 'v Im', units='m/s')
         else:
             print("没这个选择项")
@@ -677,21 +675,21 @@ class MainWindow(QMainWindow):
                 log_Z_Im = savgol_filter(log_Z_Im, window_length=self.soft_value, polyorder=3)
             self.plot3.plot(log_ff, log_Z_Im, pen=mkPen(color='black', width=2))
 
-        elif text == "流速v abs":
+        elif text == "质点速度v abs":
             log_f = np.log10(self.test_result["f"])
             log_V_abs = np.log10(self.test_result["V_abs"])
             if self.soft_value > 3:
                 log_V_abs = savgol_filter(log_V_abs, window_length=self.soft_value, polyorder=3)
             self.plot3.plot(log_f, log_V_abs, pen=mkPen(color='black', width=2))
 
-        elif text == "流速v Re":
+        elif text == "质点速度v Re":
             log_f = np.log10(self.test_result["f"])
             log_V_Re = np.log10(self.test_result["V_Re"])
             if self.soft_value > 3:
                 log_V_Re = savgol_filter(log_V_Re, window_length=self.soft_value, polyorder=3)
             self.plot3.plot(log_f, log_V_Re, pen=mkPen(color='black', width=2))
 
-        elif text == "流速v Im":
+        elif text == "质点速度v Im":
             log_f = np.log10(self.test_result["f"])
             log_V_Im = np.log10(self.test_result["V_Im"])
             if self.soft_value > 3:
@@ -700,8 +698,8 @@ class MainWindow(QMainWindow):
         else:
             print("无")
 
-        # self.plot3.plotItem.enableAutoRange(axis='xy', enable=True)  # X 和 Y 轴的自动范围调整
-        self.plot3.plotItem.enableAutoRange(axis='y', enable=False)  # Y轴范围不变
+        self.plot3.plotItem.enableAutoRange(axis='xy', enable=True)  # X 和 Y 轴的自动范围调整
+        # self.plot3.plotItem.enableAutoRange(axis='y', enable=False)  # Y轴范围不变
         self.plot_state = True
 
     def cal_impedance(self):

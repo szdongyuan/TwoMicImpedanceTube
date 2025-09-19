@@ -58,6 +58,7 @@ class SelectDeviceInterface(QDialog):
     def select_devices(self):
         self.device_list = sd.query_devices()
         hostapis = sd.query_hostapis()
+        self.logger.info(f"默认设备：out{sd.default.device[1]}, in{sd.default.device[0]}")
 
         # 输出设备
         self.comboBox.clear()
@@ -115,7 +116,6 @@ class SelectDeviceInterface(QDialog):
                 self.comboBox_2.addItem(f"{index}: {display_name_with_channels}", index)
 
         found_out = False
-        # 输出
         for i in range(1, self.comboBox.count()): # 从 1 开始，跳过提示项
             if self.comboBox.itemData(i) == sd.default.device[1]:
                 self.comboBox.setCurrentIndex(i)
@@ -156,7 +156,7 @@ class SelectDeviceInterface(QDialog):
 
                 row_layout = QHBoxLayout()
                 # 左侧显示通道名
-                channel_label = QLabel(f"通道{i}:", self)
+                channel_label = QLabel(f"Mic{i}:", self)
                 row_layout.addWidget(channel_label)
                 # 右侧显示对应的 QComboBox
                 combo_box = QComboBox(self)

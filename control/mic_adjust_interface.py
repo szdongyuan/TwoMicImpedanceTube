@@ -25,6 +25,7 @@ class MicAdjustInterface(QDialog):
         self.logger = LogManager.set_log_handler("麦克风校准")
         self.init_ui()
         self.init_fun()
+        self.init_voltage_value()
 
     def init_ui(self):
         ui_file = QFile(":ui/mic_adjust.ui")
@@ -43,9 +44,58 @@ class MicAdjustInterface(QDialog):
 
     def init_fun(self):
         self.start_adjust_button.clicked.connect(self.start_adjust)
+        # 连接失去焦点事件
+        self.target_voltage_value.focusOutEvent = self.focusOutEvent  # 将自定义的事件绑定到控件上
+
         sign.play_adjust_audio_sign.connect(self.play_adjust_audio,Qt.AutoConnection)
         sign.error_message_signal.connect(utils.show_error_message)
         sign.update_plot_sign.connect(self.update_plot)
+
+    def init_voltage_value(self):
+        ok, config = utils.get_config_content("output_signal_setting.json")
+        if not ok:
+            self.logger.error("读取配置失败: output_signal_setting.json")
+            QMessageBox.warning(self, "错误", "读取配置失败：output_signal_setting.json")
+            return
+        mic_adj_v = config.get("mic_adjust_voltage", None)
+        self.target_voltage_value.setText(str(mic_adj_v if mic_adj_v is not None else "0.01"))
+
+    def focusOutEvent(self, event):
+        """
+        当控件失去焦点时触发，进行电压值的校验和保存操作。
+        """
+        self.validate_and_save_voltage()  # 触发校验和保存操作
+
+        # 调用父类的 focusOutEvent（如果需要其他默认行为）
+        super().focusOutEvent(event)
+
+    def validate_and_save_voltage(self):
+        text = self.target_voltage_value.text().strip()
+
+        try:
+            value = float(text)
+            if value < 0:
+                raise ValueError("电压必须大于 0")
+
+            ok, config = utils.get_config_content("output_signal_setting.json")
+            if ok:
+                config["mic_adjust_voltage"] = value
+                if utils.write_config_content("output_signal_setting.json", config):
+                    self.logger.info(f"保存 mic_adjust_voltage = {value}")
+                else:
+                    QMessageBox.warning(self, "保存失败", "配置文件保存失败，请重试！")
+            else:
+                QMessageBox.warning(self, "读取失败", "配置文件读取失败，请检查文件是否存在！")
+
+        except Exception as e:
+            # 回退到上次保存的合法值
+            QMessageBox.warning(self, "输入错误", f"请输入正确的有效数字: {e}")
+            ok, cfg = utils.get_config_content("output_signal_setting.json")
+            if ok:
+                last_value = cfg.get("mic_adjust_voltage", 0.01)  # 默认值为 0.01
+                self.target_voltage_value.setText(str(last_value))
+            else:
+                self.target_voltage_value.setText("0.01")
 
     def init_images(self):
         scene = QGraphicsScene()
@@ -160,23 +210,22 @@ class MicAdjustInterface(QDialog):
             if result is False:
                 raise ValueError(f"{msg}")
 
-            info = sd.query_devices(sd.default.device[0], 'input')
-            channels = info['max_input_channels']
-            print(f"最大输入通道数: {channels}")
+            input_channels = sd.query_devices(sd.default.device[0], 'input')['max_input_channels']
+            output_channels = sd.query_devices(sd.default.device[1], 'output')['max_output_channels']
+            print(f"最大输入通道数: {input_channels},输出通道: {output_channels}")
+            self.logger.info(f"最大输入通道数: {input_channels},输出通道: {output_channels}")
 
-            if channels < 2:
-                raise ValueError(f"检测到的输入通道数为 {channels},不足 2 个，无法进行完整校准，请选择别的设备！")
+            if input_channels < 2:
+                raise ValueError(f"检测到的输入通道数为 {input_channels},不足 2 个，无法进行完整校准，请选择别的设备！")
 
-            # 开始录音 (多声道)
-            self.logger.info("开始录音 2个MIC...")
+            # 把激励信号data转化成 多维数组
             stimulus_data = np.asarray(data, dtype=np.float32)
-            if channels == 1:
-                stimulus_data = stimulus_data
-            else:
-                stimulus_data = np.column_stack([stimulus_data] * channels)
+            if output_channels > 1:
+                stimulus_data = np.column_stack([stimulus_data] * output_channels)
 
             self.logger.info("开始播放并录音...")
-            recording = sd.playrec(stimulus_data, samplerate=samplerate, channels=channels, blocking=True)
+            # stimulus_data代表的是输出的2维激励信号, channels代表的是录音时的输入通道数,这里是 6 个通道
+            recording = sd.playrec(stimulus_data, samplerate=samplerate, channels=input_channels, blocking=True)
             self.logger.info("录音完成")
 
             # 处理录音数据

@@ -67,7 +67,7 @@ font: bold 12pt &quot;Microsoft YaHei&quot;;  /* 使字体加粗 */</string>
       <item>
        <widget class="QGroupBox" name="groupBox">
         <property name="title">
-         <string>传声器1</string>
+         <string>Mic1</string>
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_3">
          <item>
@@ -86,7 +86,7 @@ font: bold 12pt &quot;Microsoft YaHei&quot;;  /* 使字体加粗 */</string>
       <item>
        <widget class="QGroupBox" name="groupBox_2">
         <property name="title">
-         <string>传声器2</string>
+         <string>Mic2</string>
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_4">
          <item>
@@ -149,17 +149,17 @@ font: bold 12pt &quot;Microsoft YaHei&quot;;  /* 使字体加粗 */</string>
           </item>
           <item>
            <property name="text">
-            <string>流速v abs</string>
+            <string>质点速度v abs</string>
            </property>
           </item>
           <item>
            <property name="text">
-            <string>流速v Re</string>
+            <string>质点速度v Re</string>
            </property>
           </item>
           <item>
            <property name="text">
-            <string>流速v Im</string>
+            <string>质点速度v Im</string>
            </property>
           </item>
          </widget>
@@ -380,7 +380,7 @@ font: bold 12pt &quot;Microsoft YaHei&quot;;  /* 使字体加粗 */</string>
   </action>
   <action name="action_6">
    <property name="text">
-    <string>输出电压校准</string>
+    <string>输入/输出校准</string>
    </property>
   </action>
  </widget>

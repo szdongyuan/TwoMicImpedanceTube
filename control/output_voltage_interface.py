@@ -26,7 +26,7 @@ class MicoutputVoltageInterface(QDialog):
         self.play_flag = False
         self.countdown = 10
         self.ui = None
-        self.logger = LogManager.set_log_handler("输出输入电压校准")
+        self.logger = LogManager.set_log_handler("输入/输出校准")
         self.init_ui()
         self.init_fun()
         self.get_calibration_param()
@@ -39,12 +39,12 @@ class MicoutputVoltageInterface(QDialog):
         ui_file.open(QFile.ReadOnly)
         self.ui = loadUi(ui_file, self)
         ui_file.close()
-        self.setWindowTitle("输出电压校准")
+        self.setWindowTitle("输入/输出校准")
         self.ui.tabWidget.setTabText(0, "输出校准")
         self.ui.tabWidget.setTabText(1, "输入校准")
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinimizeButtonHint| Qt.WindowMaximizeButtonHint)
         self.show()
-        self.logger.info("打开输出输入校准")
+        self.logger.info("打开输入/输出校准")
 
     def init_fun(self):
         # 输出界面初始化
@@ -66,7 +66,8 @@ class MicoutputVoltageInterface(QDialog):
     def get_calibration_param(self):
         calibration_nums = self.calibration_nums_box.value()
         output_voltage = self.output_voltage_value
-        amplitude_list = np.linspace(0.05, 0.95, calibration_nums)
+        amplitude_list = np.linspace(0.15, 0.95, calibration_nums)
+        print(amplitude_list)
         self.calibration_param = {
             "calibration_nums": calibration_nums,
             "output_voltage": output_voltage,
@@ -362,7 +363,7 @@ class MicoutputVoltageInterface(QDialog):
     def closeEvent(self, event):
         if self.parent:
             self.parent.output_voltage_window = None
-        self.logger.info("关闭输出输入校准")
+        self.logger.info("关闭输入/输出校准")
         event.accept()
 
 class SoundcardCalibrationManager(object):

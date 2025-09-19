@@ -24,6 +24,7 @@ class OutputSignalSetInterface(QDialog):
         self.logger = LogManager.set_log_handler("输出信号设置")
         self.init_ui()
         self.init_fun()
+        self.graph_signal()
 
     def init_ui(self):
         ui_file = QFile(":ui/output_signal_setting.ui")
