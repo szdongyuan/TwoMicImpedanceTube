@@ -447,12 +447,12 @@ class MainWindow(QMainWindow):
 
             # 处理录音数据
             mic1_data, mic2_data, real_spl1, real_spl2 = MicAdjustInterface.process_mic_channels_data(recording)
-            if real_spl1 > 140:
-                self.logger.error(f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {140} dB，已饱和")
-                QMessageBox.warning(self, "警告", f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {140} dB，已饱和")
-            if real_spl2 > 140:
-                self.logger.error(f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {140} dB，已饱和")
-                QMessageBox.warning(self, "警告", f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {140} dB，已饱和")
+            if real_spl1 > 120:
+                self.logger.error(f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
+                QMessageBox.warning(self, "警告", f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
+            if real_spl2 > 120:
+                self.logger.error(f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {120} dB，已饱和")
+                QMessageBox.warning(self, "警告", f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {120} dB，已饱和")
 
             # 创建采集保存目录
             save_dir = os.path.join(os.getcwd(), "！采集")
