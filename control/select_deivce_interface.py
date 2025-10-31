@@ -15,7 +15,7 @@ class SelectDeviceInterface(QDialog):
         self.parent = parent
         self.ui = None
         self.signal_info = None
-        self.logger = LogManager.set_log_handler("选择输出设备")
+        self.logger = LogManager.set_log_handler("硬件设备选择")
         self.init_ui()
         self.init_fun()
         self.device_list = []
@@ -29,11 +29,11 @@ class SelectDeviceInterface(QDialog):
         ui_file.open(QFile.ReadOnly)
         self.ui = loadUi(ui_file, self)
         ui_file.close()
-        self.setWindowTitle("选择输出设备")
+        self.setWindowTitle("硬件设备选择")
         # 最小化
         self.setWindowFlags(self.windowFlags() | Qt.WindowMinimizeButtonHint)
         self.show()
-        self.logger.info("打开选择输出设备界面")
+        self.logger.info("打开硬件设备选择界面")
 
     def init_fun(self):
         self.save_all_button.clicked.connect(self.save_all_device_settings)
@@ -297,5 +297,5 @@ class SelectDeviceInterface(QDialog):
     def closeEvent(self, event):
         if self.parent:
             self.parent.device_window = None
-        self.logger.info("关闭选择输出设备界面")
+        self.logger.info("关闭硬件设备选择界面")
         event.accept()

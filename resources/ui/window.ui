@@ -375,7 +375,7 @@ font: bold 12pt &quot;Microsoft YaHei&quot;;  /* 使字体加粗 */</string>
   </action>
   <action name="action_2">
    <property name="text">
-    <string>选择输出设备</string>
+    <string>硬件设备选择</string>
    </property>
   </action>
   <action name="action_6">

@@ -48,10 +48,10 @@ class MicoutputVoltageInterface(QDialog):
 
     def init_fun(self):
         # 输出界面初始化
-        self.calibration_nums_box.setValue(5)
+        self.calibration_nums_box.setValue(1)
         self.yincang.setStyleSheet("background-color: transparent; border: none; color: transparent;")
         self.countdown_label.setStyleSheet("background-color: transparent; border: none; color: transparent;")
-        self.calibration_nums_box.setRange(3, 20)
+        self.calibration_nums_box.setRange(1, 20)
         self.reset_button.clicked.connect(self.clicked_reset_button)
         self.play_button.clicked.connect(self.play_btn_clicked)
         self.save_button.clicked.connect(self.save_btn_clicked)
@@ -66,8 +66,10 @@ class MicoutputVoltageInterface(QDialog):
     def get_calibration_param(self):
         calibration_nums = self.calibration_nums_box.value()
         output_voltage = self.output_voltage_value
-        amplitude_list = np.linspace(0.15, 0.95, calibration_nums)
-        print(amplitude_list)
+        if calibration_nums == 1:
+            amplitude_list = np.array([0.95])
+        else:
+            amplitude_list = np.linspace(0.15, 0.95, calibration_nums)
         self.calibration_param = {
             "calibration_nums": calibration_nums,
             "output_voltage": output_voltage,
@@ -188,6 +190,8 @@ class MicoutputVoltageInterface(QDialog):
             QMessageBox.critical(self, "错误", "所保存的电压不符合校准次数的要求")
             self.logger.error("所保存的电压不符合校准次数的要求")
         else:
+            if self.calibration_param["calibration_nums"] == 1:
+                scm.add_data(0, 0, validation=False)
             for amplitude, voltage in zip(self.calibration_param["amplitude_list"], self.output_voltage_value):
                 scm.add_data(amplitude, voltage)
             fit_code, msg = scm.fit()
@@ -202,7 +206,7 @@ class MicoutputVoltageInterface(QDialog):
         self.output_voltage_value.clear()
         self.output_voltage_box.setValue(0)
         self.target_voltage_box.setValue(0)
-        self.calibration_nums_box.setValue(5)
+        self.calibration_nums_box.setValue(1)
         self.current_count = 1
         self.countdown = 10
         self.play_label.setText(f"第{self.current_count}次 ")
@@ -372,7 +376,7 @@ class SoundcardCalibrationManager(object):
         self.voltages = []
         self.logger = LogManager.set_log_handler("soundcard_core")
 
-    def add_data(self, amplitude, voltage):
+    def add_data(self, amplitude, voltage, validation=True):
         """
             添加幅度和电压数据。
             参数:
@@ -383,10 +387,11 @@ class SoundcardCalibrationManager(object):
             返回:
                  包含状态码和提示信息的元组。
         """
-        if not amplitude or not voltage:
-            return False, "输入数据不能为空值。"
-        if not isinstance(amplitude, (int, float)) or not isinstance(voltage, (int, float)):
-            return False, "输入数据必须为数字类型。"
+        if validation:
+            if not amplitude or not voltage:
+                return False, "输入数据不能为空值。"
+            if not isinstance(amplitude, (int, float)) or not isinstance(voltage, (int, float)):
+                return False, "输入数据必须为数字类型。"
         self.amplitudes.append(amplitude)
         self.voltages.append(voltage)
         return True, "成功添加数据"
@@ -404,18 +409,18 @@ class SoundcardCalibrationManager(object):
             self.logger.error("幅度和电压的数量必须一致")
             return False, "幅度和电压的数量必须一致"
         coefficients, residuals, *_ = np.polyfit(self.voltages, self.amplitudes, 1, full=True)
-        if len(residuals) == 0:
-            self.logger.error("残差为空")
-            return False, "残差为空，请重新校准。"
-        mse = np.nanmean(residuals ** 2)
-        if mse > threshold or mse < 0 or not np.isfinite(mse):
-            self.logger.error("校准精度不足，请重新校准。")
-            return False, "校准精度不足，请重新校准。"
-        else:
-            save_code, msg = self.save_coefficients_to_json(coefficients, max(self.voltages), json_file_name)
-            if save_code == True:
-                return True, coefficients
-            return save_code, msg
+        if len(self.voltages) > 2:
+            if len(residuals) == 0:
+                self.logger.error("残差为空")
+                return False, "残差为空，请重新校准。"
+            mse = np.nanmean(residuals ** 2)
+            if mse > threshold or mse < 0 or not np.isfinite(mse):
+                self.logger.error("校准精度不足，请重新校准。")
+                return False, "校准精度不足，请重新校准。"
+        save_code, msg = self.save_coefficients_to_json(coefficients, max(self.voltages), json_file_name)
+        if save_code == True:
+            return True, coefficients
+        return save_code, msg
 
     @staticmethod
     def predict_amplitude(coefficients, target_voltage):
