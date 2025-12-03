@@ -8,7 +8,7 @@ import numpy as np
 import sounddevice as sd
 import pyqtgraph
 from PyQt5 import QtWidgets
-from PyQt5.QtCore import QFile, Qt
+from PyQt5.QtCore import QFile, Qt, QTimer
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtWidgets import QApplication, QMainWindow, QGraphicsScene, QGraphicsPixmapItem, QLabel, QMessageBox, \
     QVBoxLayout, QMenu, QAction, QFileDialog
@@ -285,7 +285,18 @@ class MainWindow(QMainWindow):
         self.slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
 
         self.slider.valueChanged.connect(self.update_float_label)
-        self.update_float_label(self.slider.value())
+
+    def _reposition_slider_label(self):
+        if hasattr(self, "slider") and self.slider is not None:
+            self.update_float_label(self.slider.value())
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self._reposition_slider_label)  # 首次显示后再定位
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._reposition_slider_label)  # 窗口尺寸变化后再定位
 
     def update_float_label(self, value):
         float_value = value / 1
