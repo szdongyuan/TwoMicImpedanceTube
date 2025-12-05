@@ -22,6 +22,8 @@ class MicAdjustInterface(QDialog):
         self.parent = parent
         self.ui = None
         self.signal_info = None
+        self.mic1_pa = None
+        self.mic2_pa = None
         self.logger = LogManager.set_log_handler("麦克风校准")
         self.init_ui()
         self.init_fun()
@@ -121,7 +123,7 @@ class MicAdjustInterface(QDialog):
         self.ui.frame_plot3.setLayout(layout3)
         self.plot3.setBackground('white')
         self.plot3.setLabel('bottom', 'Time', units='s')
-        self.plot3.setLabel('left', 'Amplitude', units='V')
+        self.plot3.setLabel('left', 'Amplitude', units='Pa')
         self.plot3.getAxis('bottom').setTextPen("black")
         self.plot3.getAxis('left').setTextPen("black")
         self.plot3.showGrid(x=True, y=True, alpha=0.25)
@@ -156,7 +158,7 @@ class MicAdjustInterface(QDialog):
         self.ui.frame_plot4.setLayout(layout4)
         self.plot4.setBackground('white')
         self.plot4.setLabel('bottom', 'Time', units='s')
-        self.plot4.setLabel('left', 'Amplitude', units='V')
+        self.plot4.setLabel('left', 'Amplitude', units='Pa')
         self.plot4.getAxis('bottom').setTextPen("black")
         self.plot4.getAxis('left').setTextPen("black")
         self.plot4.showGrid(x=True, y=True, alpha=0.25)
@@ -229,7 +231,9 @@ class MicAdjustInterface(QDialog):
             self.logger.info("录音完成")
 
             # 处理录音数据
-            mic1_data, mic2_data, real_spl1, real_spl2 = self.process_mic_channels_data(recording)
+            mic1_data, mic2_data, real_spl1, real_spl2, scale1, scale2 = self.process_mic_channels_data(recording)
+            self.mic1_pa = mic1_data * scale1
+            self.mic2_pa = mic2_data * scale2
             if real_spl1 > 120:
                 self.logger.error(f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
                 QMessageBox.warning(self, "警告", f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
@@ -247,9 +251,8 @@ class MicAdjustInterface(QDialog):
             self.logger.info(f"MIC1 校准已保存: {mic1_txt}")
             self.logger.info(f"MIC2 校准已保存: {mic2_txt}")
 
-            time_axis = np.linspace(0, duration, len(mic1_data))
-
-            sign.update_plot_sign.emit(time_axis, mic1_data, mic2_data, samplerate)
+            time_axis = np.linspace(0, duration, len(self.mic1_pa))
+            sign.update_plot_sign.emit(time_axis, self.mic1_pa, self.mic2_pa, samplerate)
             self.logger.info(f"画图完成！")
             utils.set_adjust_button_enabled(self.start_adjust_button, True)
         except Exception as e:
@@ -282,13 +285,17 @@ class MicAdjustInterface(QDialog):
         mic2_data = recording[:, binding_index_2]
         spl_smooth1 = AudioThdFrequencyResponseAnalysis.spl_calculation(recording[:, binding_index_1])
         real_1 = np.max(spl_smooth1)
-        print(f"real_1实测: {real_1}")
         spl_smooth2 = AudioThdFrequencyResponseAnalysis.spl_calculation(recording[:, binding_index_2])
         real_2 = np.max(spl_smooth2)
-        print(f"real_2实测: {real_2}")
         real_spl1 = real_1 + Mic1_deviation_value
         real_spl2 = real_2 + Mic2_deviation_value
-        return mic1_data, mic2_data, real_spl1, real_spl2
+        rms1 = utils.calculate_rms(recording[:, binding_index_1])
+        rms2 = utils.calculate_rms(recording[:, binding_index_2])
+        scale1 = utils.calculate_scale(real_spl1, rms1)
+        scale2 = utils.calculate_scale(real_spl2, rms2)
+        print(f"RMS: {rms1:.8f}, {rms2:.8f}")
+        print(f"Scale: {scale1:.2f}, {scale2:.2f}")
+        return mic1_data, mic2_data, real_spl1, real_spl2, scale1, scale2
 
     def start_adjust(self):
         utils.set_adjust_button_enabled(self.start_adjust_button, False)

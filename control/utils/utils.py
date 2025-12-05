@@ -608,3 +608,29 @@ def compute_fft(y, sr):
     Y = np.fft.rfft(y)  # 对信号进行实数快速傅里叶变换，返回正频率部分
     f = np.fft.rfftfreq(len(y), 1/sr)  # 计算对应的频率坐标
     return f, np.abs(Y)  # 返回频率和幅值谱
+
+def calculate_rms(signal: np.ndarray) -> float:
+    """
+    计算输入信号的均方根值 (RMS)
+    :param signal: numpy 数组类型的信号数据
+    :return: RMS 值（float）
+    """
+    if len(signal) == 0:
+        return 0.0
+    return np.sqrt(np.mean(np.square(signal)))
+
+
+def calculate_scale(real_spl: float, rms: float) -> float:
+    """
+    根据真实声压级 (SPL, 单位 dB SPL) 和信号的 RMS 计算缩放系数。
+    :param real_spl: 真实声压级，单位 dB SPL（如 94 dB）
+    :param rms: 当前信号的均方根值（RMS）
+    :return: 缩放系数
+    """
+    logger = LogManager.set_log_handler("计算缩放scale")
+    if rms == 0 or not np.isfinite(rms):
+        logger.error(f"RMS 值无效: {rms}")
+        return 0.0
+    p = 20e-6 * 10 ** (real_spl / 20)
+    scale = p / rms
+    return scale

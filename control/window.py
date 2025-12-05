@@ -39,6 +39,10 @@ class MainWindow(QMainWindow):
         self.test_result = None
         self.soft_value = None
         self.plot_state = False
+        self.mic1_data = None
+        self.mic2_data = None
+        self.mic1_pa = None
+        self.mic2_pa = None
         self.is_testing = False
 
         self.logger = LogManager.set_log_handler("主窗口")
@@ -118,11 +122,9 @@ class MainWindow(QMainWindow):
         self.frame.setLayout(layout1)
         self.plot1.setBackground('white')
         self.plot1.setLabel('bottom', 'Time', units='s')
-        self.plot1.setLabel('left', 'Amplitude', units='V')
+        self.plot1.setLabel('left', 'Amplitude', units='Pa')
         self.plot1.getAxis('bottom').setTextPen("black")
         self.plot1.getAxis('left').setTextPen("black")
-        self.plot1.getAxis('bottom').enableAutoSIPrefix(False)
-        self.plot1.getAxis('left').enableAutoSIPrefix(False)
         self.plot1.showGrid(x=True, y=True, alpha=0.25)
 
         self.plot2 = pyqtgraph.PlotWidget()
@@ -132,11 +134,9 @@ class MainWindow(QMainWindow):
         self.frame_2.setLayout(layout2)
         self.plot2.setBackground('white')
         self.plot2.setLabel('bottom', 'Time', units='s')
-        self.plot2.setLabel('left', 'Amplitude', units='V')
+        self.plot2.setLabel('left', 'Amplitude', units='Pa')
         self.plot2.getAxis('bottom').setTextPen("black")
         self.plot2.getAxis('left').setTextPen("black")
-        self.plot2.getAxis('bottom').enableAutoSIPrefix(False)
-        self.plot2.getAxis('left').enableAutoSIPrefix(False)
         self.plot2.showGrid(x=True, y=True, alpha=0.25)
 
         self.plot3 = pyqtgraph.PlotWidget()
@@ -457,7 +457,10 @@ class MainWindow(QMainWindow):
             self.logger.info("录音完成")
 
             # 处理录音数据
-            mic1_data, mic2_data, real_spl1, real_spl2 = MicAdjustInterface.process_mic_channels_data(recording)
+            (self.mic1_data, self.mic2_data, real_spl1, real_spl2,
+             scale1, scale2) = MicAdjustInterface.process_mic_channels_data(recording)
+            self.mic1_pa = self.mic1_data * scale1
+            self.mic2_pa = self.mic2_data * scale2
             if real_spl1 > 120:
                 self.logger.error(f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
                 QMessageBox.warning(self, "警告", f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
@@ -470,20 +473,20 @@ class MainWindow(QMainWindow):
             os.makedirs(save_dir, exist_ok=True)
             mic1_txt = os.path.join(save_dir, "MIC1.txt")
             mic2_txt = os.path.join(save_dir, "MIC2.txt")
-            np.savetxt(mic1_txt, mic1_data)
-            np.savetxt(mic2_txt, mic2_data)
+            np.savetxt(mic1_txt, self.mic1_data)
+            np.savetxt(mic2_txt, self.mic2_data)
             self.logger.info(f"MIC1 采集已保存: {mic1_txt}")
             self.logger.info(f"MIC2 采集已保存: {mic2_txt}")
 
-            time_axis = np.linspace(0, duration, len(mic1_data))
-            self.plot1.plot(time_axis, mic1_data, pen=mkPen(color=(200, 200, 200)))
-            self.plot2.plot(time_axis, mic2_data, pen='gray')
+            time_axis = np.linspace(0, duration, len(self.mic1_pa))
+            self.plot1.plot(time_axis, self.mic1_pa, pen=mkPen(color=(200, 200, 200)))
+            self.plot2.plot(time_axis, self.mic2_pa, pen='gray')
 
             mic1_cal_data, mic2_cal_data = self.load_calibration_data()
 
             ff, f, Z_abs, Z_Re, Z_Im, V_abs, V_Re, V_Im = utils.calculate_impedance_velocity(
-                mic2=mic2_data,
-                mic1=mic1_data,
+                mic2=self.mic2_data,
+                mic1=self.mic1_data,
                 mic2_cal=mic2_cal_data,
                 mic1_cal=mic1_cal_data,
                 sf=samplerate,
