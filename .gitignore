@@ -1,0 +1,53 @@
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Audio files
+*.wav
+*.mp3
+*.flac
+
+# Data files
+*.npz
+*.npy
+*.mat
+
+# Archive files
+*.7z
+*.rar
+*.zip
+
+# Embedded git repositories
+ImpedanceTubeTestingSystem/
+JCA/
+
+# Environment folders
+environment/
+
+# Test output files
+test*.png
+test*.wav
+jdf*.txt
+array.npy
+
+# Documentation
+*.pdf
+*.docx
+*.xlsx
