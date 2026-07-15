@@ -22,7 +22,10 @@ from control.mic_adjust_interface import MicAdjustInterface
 from control.output_signal_setting_interface import OutputSignalSetInterface
 from control.output_voltage_interface import MicoutputVoltageInterface, SoundcardCalibrationManager
 from control.select_deivce_interface import SelectDeviceInterface
-from control.utils import utils
+from control.utils import utils, cfg_filter_interface
+from control.utils.audio_session_manager import AudioSessionManager
+from control.utils.streaming_audio_processor import DuplexStreamingPlayRec
+from custom.customSignals import sign
 from resources import icons_rc, ui_rc # 导入资源
 
 
@@ -43,15 +46,22 @@ class MainWindow(QMainWindow):
         self.mic2_data = None
         self.mic1_pa = None
         self.mic2_pa = None
-        self.is_testing = False
-
         self.logger = LogManager.set_log_handler("主窗口")
+        # ===== 流式录音相关 =====
+        self.streaming_buffer = []
+        self.stream_instance = None
+        self.mic_binding = (0, 1)
+        self.mic_deviation_db = (0.0, 0.0)
+        self.stream_timer = QTimer(self)
+        self.stream_timer.timeout.connect(self._handle_queue_and_update_ui)
+
         self.init_ui()
         self.init_fun()
         self.init_image()
         self.init_view()
         self.load_basic_params_config()
         self.init_slider()
+        self.crosshair_enabled = False
 
     def init_ui(self):
         ui_file = QFile(":ui/window.ui")
@@ -59,11 +69,10 @@ class MainWindow(QMainWindow):
         loadUi(ui_file, self)
         # 设置窗口标题和大小
         self.setWindowTitle('2MIC薄层材料测试系统V1.0')
+        self.showMaximized()
 
-        self.resize(1200, 800)
         # 设置窗口图标
         self.setWindowIcon(QIcon(':/images/dongyuan.png'))
-        self.move_to_center()
         # 获取主界面的布局并设置内容的边距
         layout = self.centralWidget().layout()  # 获取 QMainWindow 的中心控件的布局
         if layout:
@@ -126,6 +135,7 @@ class MainWindow(QMainWindow):
         self.plot1.getAxis('bottom').setTextPen("black")
         self.plot1.getAxis('left').setTextPen("black")
         self.plot1.showGrid(x=True, y=True, alpha=0.25)
+        self.curve1 = self.plot1.plot([], [], pen=mkPen(color=(76, 120, 168)))
 
         self.plot2 = pyqtgraph.PlotWidget()
         layout2 = QVBoxLayout()
@@ -138,6 +148,7 @@ class MainWindow(QMainWindow):
         self.plot2.getAxis('bottom').setTextPen("black")
         self.plot2.getAxis('left').setTextPen("black")
         self.plot2.showGrid(x=True, y=True, alpha=0.25)
+        self.curve2 = self.plot2.plot([], [], pen=mkPen(color=(84, 162, 75)))
 
         self.plot3 = pyqtgraph.PlotWidget()
         layout3 = QVBoxLayout()
@@ -170,6 +181,10 @@ class MainWindow(QMainWindow):
         # 清空范围限制，允许滚轮缩放
         self.plot3.setAutoVisible(True)  # 启用自动范围调整
         self.plot3.plotItem.scene().sigMouseMoved.connect(self.mov)
+        # legend 只创建一次
+        self.legend = self.plot3.addLegend(offset=(-10, 10))
+        # 主曲线（只建一次）
+        self.curve3 = self.plot3.plot([], [], pen=mkPen(color='black', width=2), name='本次测试')
 
     def on_plot3_clicked(self, event):
         if event.double():
@@ -277,6 +292,9 @@ class MainWindow(QMainWindow):
         self.float_label.setStyleSheet("background-color: white; border: 1px solid gray;")
         self.float_label.setFixedSize(60, 20)
         self.float_label.setAlignment(Qt.AlignCenter)
+        self.float_label.show()
+        self.float_label.raise_()
+
         # 初始化浮动标签
         self.slider.setMinimum(0)
         self.slider.setMaximum(100)
@@ -419,101 +437,223 @@ class MainWindow(QMainWindow):
             self.logger.error(f"读取配置失败: {e}")
             QMessageBox.warning(self, "错误", f"读取{tube_path}配置失败：{e}")
 
+    def _load_mic_binding_indices(self):
+        # 默认顺序
+        idx1, idx2 = 0, 1
+        dev1, dev2 = 0.0, 0.0
+        try:
+            path = utils.get_config_path("mic_calibration.json")
+            with open(path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            idx1 = int(cfg.get("In1", {}).get("binding_index", idx1))
+            idx2 = int(cfg.get("In2", {}).get("binding_index", idx2))
+            dev1 = float(cfg.get("In1", {}).get("deviation_value", dev1))
+            dev2 = float(cfg.get("In2", {}).get("deviation_value", dev2))
+        except Exception as e:
+            self.logger.warning(f"读取 mic_calibration.json 失败，使用默认绑定 0/1：{e}")
+
+        self.mic_binding = (idx1, idx2)
+        self.mic_deviation_db = (dev1, dev2)
+
     def run_test(self):
-        utils.set_run_button_enabled(self.run_test_button, False)
         self.init_config()
+        self._load_mic_binding_indices()
+        # 防止多个界面同时占用声卡
+        if not AudioSessionManager.acquire(self):
+            QMessageBox.warning(self, "提示", "音频设备正在被其它界面占用，请先停止/关闭其它录音功能。")
+            self.test_state.setText("音频被占用")
+            return
+        utils.set_run_button_enabled(self.run_test_button, False)
         self.test_state.setText("测试中...")
-        QtWidgets.QApplication.processEvents()
-        # threading.Thread(target=self.record_and_plot).start()
+        QApplication.processEvents()
         self.record_and_plot()
-        # 启用按钮
-        utils.set_run_button_enabled(self.run_test_button, True)
 
     def record_and_plot(self):
         try:
-            self.plot1.clear()
-            self.plot2.clear()
+            # 清空显示（不要 plot().clear() 叠加）
+            self.curve1.setData([], [])
+            self.curve2.setData([], [])
+            self.curve3.setData([], [])
+            # 清除 十字线
+            if self.crosshair_enabled:
+                self.del_cross()
+            self.streaming_buffer = []
+            QApplication.processEvents()
             # 获取设备采样率
             samplerate = utils.get_device_info()
+            # 获取测试前yaml文件数据
+            result, cfg, msg = utils.get_yaml_content("speaker_cfg_test.yaml")
+            if not result:
+                raise Exception(f"读取 YAML 文件失败: {msg}")
             duration = self.signal_info['signal_time']
             # 根据目标电压，校准并生成激励信号
             result, data, amplitude, msg = utils.generate_calibrated_signal(self.signal_info, samplerate)
             if result is False:
                 raise ValueError(f"{msg}")
+            data = cfg_filter_interface.filter_signal_with_cfg(data, samplerate, cfg)
 
             input_channels = sd.query_devices(sd.default.device[0], 'input')['max_input_channels']
             output_channels = sd.query_devices(sd.default.device[1], 'output')['max_output_channels']
             print(f"最大输入通道数: {input_channels},输出通道: {output_channels}")
             self.logger.info(f"最大输入通道数: {input_channels},输出通道: {output_channels}")
 
-            # 把激励信号data转化成 多维数组
+            if input_channels < 2:
+                raise ValueError(f"检测到的输入通道数为 {input_channels},不足 2 个，无法进行完整校准，请选择别的设备！")
+
+            # 开始录音 (多声道)
             stimulus_data = np.asarray(data, dtype=np.float32)
             if output_channels > 1:
                 stimulus_data = np.column_stack([stimulus_data] * output_channels)
 
-            self.logger.info("开始播放并录音...")
-            # stimulus_data代表的是输出的2维激励信号, channels代表的是录音时的输入通道数,这里是 6 个通道
-            recording = sd.playrec(stimulus_data, samplerate=samplerate, channels=input_channels, blocking=True)
-            self.logger.info("录音完成")
+            # 读设备（你已经保存到 basic_params.json）
+            ok, config = utils.get_config_content("basic_params.json")
+            input_device = config["basic_params"]["input_selected_device_id"]
+            output_device = config["basic_params"]["output_selected_device_id"]
+            self.logger.info(f"开始流式播放并录音..")
 
-            # 处理录音数据
-            (self.mic1_data, self.mic2_data, real_spl1, real_spl2,
-             scale1, scale2) = MicAdjustInterface.process_mic_channels_data(recording)
-            self.mic1_pa = self.mic1_data * scale1
-            self.mic2_pa = self.mic2_data * scale2
-            if real_spl1 > 120:
-                self.logger.error(f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
-                QMessageBox.warning(self, "警告", f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
-            if real_spl2 > 120:
-                self.logger.error(f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {120} dB，已饱和")
-                QMessageBox.warning(self, "警告", f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {120} dB，已饱和")
-
-            # 创建采集保存目录
-            save_dir = os.path.join(os.getcwd(), "！采集")
-            os.makedirs(save_dir, exist_ok=True)
-            mic1_txt = os.path.join(save_dir, "MIC1.txt")
-            mic2_txt = os.path.join(save_dir, "MIC2.txt")
-            np.savetxt(mic1_txt, self.mic1_data)
-            np.savetxt(mic2_txt, self.mic2_data)
-            self.logger.info(f"MIC1 采集已保存: {mic1_txt}")
-            self.logger.info(f"MIC2 采集已保存: {mic2_txt}")
-
-            time_axis = np.linspace(0, duration, len(self.mic1_pa))
-            self.plot1.plot(time_axis, self.mic1_pa, pen=mkPen(color=(200, 200, 200)))
-            self.plot2.plot(time_axis, self.mic2_pa, pen='gray')
-
-            mic1_cal_data, mic2_cal_data = self.load_calibration_data()
-
-            ff, f, Z_abs, Z_Re, Z_Im, V_abs, V_Re, V_Im = utils.calculate_impedance_velocity(
-                mic2=self.mic2_data,
-                mic1=self.mic1_data,
-                mic2_cal=mic2_cal_data,
-                mic1_cal=mic1_cal_data,
-                sf=samplerate,
-                temp=self.tube_params.get("tube_temperature"),
-                dia_tube_mm=self.tube_params.get("tubu_inner_diameter"),
-                mic_dis_mm=self.tube_params.get("microphone_to_sample_distance"),
-                s2=self.tube_params.get("sample_area"),
-                sen=self.tube_params.get("microphone_sensitivity")
+            self.stream_instance = DuplexStreamingPlayRec()
+            self.stream_instance.start(
+                stimulus_data=stimulus_data,
+                sample_rate=samplerate,
+                input_device=input_device,
+                output_device=output_device,
+                input_channels=int(input_channels),
+                output_channels=int(output_channels),
+                duration=duration,  # 你没有 prepare/prolong 就用 duration
+                blocksize=2048,
             )
-            self.test_result = {
-                "ff": ff,
-                "f": f,
-                "Z_abs": Z_abs,
-                "Z_Re": Z_Re,
-                "Z_Im": Z_Im,
-                "V_abs": V_abs,
-                "V_Re": V_Re,
-                "V_Im": V_Im
-            }
-            self.update_plot3_by_selector()
+            self.stream_timer.start(50)  # 50ms 刷一次队列/判断结束
+            return
 
-            self.logger.info(f"画图完成！")
-            self.test_state.setText("测试完成")
         except Exception as e:
-            self.logger.error(f"录音或保存失败: {e}")
-            QMessageBox.warning(self, "错误", f"录音或保存失败：{e}")
             self.test_state.setText(f"测试失败: {e}")
+            QMessageBox.critical(self, "错误", f"录音失败：{e}")
+            utils.set_run_button_enabled(self.run_test_button, True)
+            AudioSessionManager.release(self)
+
+    def _handle_queue_and_update_ui(self):
+        """
+        仿 SpeakerAnomalyDetection 的写法：
+        - 定时器里只做三件事：处理队列、实时更新显示、判断结束并触发收尾
+        """
+        if self.stream_instance is None:
+            return
+
+        # 1) 处理队列：把回调线程塞进来的 chunk 取出来
+        chunks = self.stream_instance.process_queue()
+        sr = self.stream_instance.sample_rate
+
+        if chunks:
+            # 2) 实时显示：只画最近 N 秒（避免越画越卡）
+            duration = float(self.signal_info.get("signal_time", 5))
+            keep_sr = int(duration * sr)
+
+            # 维护滚动窗口（只保留最近 keep 个采样点）
+            new_block = np.vstack(chunks)  # (k,4)
+            self.streaming_buffer.append(new_block)  # 用 list 装块更快
+            buf = np.vstack(self.streaming_buffer)
+            if buf.shape[0] > keep_sr:
+                buf = buf[-keep_sr:, :]
+                self.streaming_buffer = [buf]  # 只保留一块，避免 list 无限增长
+
+            # 时间轴：用累计样本数推算起点
+            total_samples = self.stream_instance.samples_captured
+            start_sample = max(0, total_samples - buf.shape[0])
+            time_axis = (start_sample + np.arange(buf.shape[0])) / sr
+
+            # 只做“时域实时更新”
+            pa1, pa2 = MicAdjustInterface.process_chunks(buf, self.mic_binding, self.mic_deviation_db)
+            self.update_time_plot(time_axis, pa1, pa2)
+
+        #3) 录音结束：录音停止-> stream停timer-> 收集结果(recording/err)-> stop/释放stream-> (FFT/保存/画图)-> 恢复按钮&释放占用锁
+        if not self.stream_instance.is_recording:
+
+            self.stream_timer.stop()
+
+            err = getattr(self.stream_instance, "error", None)
+            recording = self.stream_instance.get_recorded_data()  # (N,4)
+
+            self.stream_instance.stop()
+            self.stream_instance = None
+
+            try:
+                if err:
+                    raise RuntimeError(f"流式录音出错：{err}")
+
+                self._handle_recording_fft(recording, sr)
+
+            except Exception as e:
+                self.logger.exception("录音后处理失败")
+                sign.error_message_signal.emit(f"录音失败：{e}", self)
+
+            finally:
+                utils.set_run_button_enabled(self.run_test_button, True)
+                AudioSessionManager.release(self)
+
+    def _handle_recording_fft(self, recording, samplerate):
+        self.logger.info("录音完成(流式),开始处理音频数据")
+        duration = float(self.signal_info.get("signal_time", 0))
+
+        # 1) 计算（SPL/scale）
+        self.mic1_data, self.mic2_data, real_spl1, real_spl2, scale1, scale2 = (
+            MicAdjustInterface.process_mic_channels_data(recording, self.mic_binding, self.mic_deviation_db))
+
+        # 2) 转成 Pa
+        self.mic1_pa = self.mic1_data * scale1
+        self.mic2_pa = self.mic2_data * scale2
+
+        # 3) 饱和提示
+        if real_spl1 > 120:
+            self.logger.error(f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
+            QMessageBox.warning(self, "警告", f"麦克风1实际声压级 {real_spl1:.2f} dB, 超过阈值 {120} dB，已饱和")
+        if real_spl2 > 120:
+            self.logger.error(f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {120} dB，已饱和")
+            QMessageBox.warning(self, "警告", f"麦克风2实际声压级 {real_spl2:.2f} dB, 超过阈值 {120} dB，已饱和")
+
+
+        # 4) 保存 txt（保存的是 mic*_data 原始通道数据）
+        save_dir = os.path.join(os.getcwd(), "！采集")
+        os.makedirs(save_dir, exist_ok=True)
+        mic1_txt = os.path.join(save_dir, "MIC1.txt")
+        mic2_txt = os.path.join(save_dir, "MIC2.txt")
+        np.savetxt(mic1_txt, self.mic1_data)
+        np.savetxt(mic2_txt, self.mic2_data)
+        self.logger.info(f"MIC1 采集已保存: {mic1_txt}")
+        self.logger.info(f"MIC2 采集已保存: {mic2_txt}")
+
+        # 画最终 Pa 曲线
+        time_axis = np.linspace(0, duration, len(self.mic1_pa))
+        self.update_time_plot(time_axis, self.mic1_pa, self.mic2_pa)
+
+        mic1_cal_data, mic2_cal_data = self.load_calibration_data()
+        ff, f, Z_abs, Z_Re, Z_Im, V_abs, V_Re, V_Im = utils.calculate_impedance_velocity(
+            mic2=self.mic2_data,
+            mic1=self.mic1_data,
+            mic2_cal=mic2_cal_data,
+            mic1_cal=mic1_cal_data,
+            sf=samplerate,
+            temp=self.tube_params.get("tube_temperature"),
+            dia_tube_mm=self.tube_params.get("tubu_inner_diameter"),
+            mic_dis_mm=self.tube_params.get("microphone_to_sample_distance"),
+            s2=self.tube_params.get("sample_area"),
+            sen=self.tube_params.get("microphone_sensitivity")
+        )
+        self.test_result = {
+            "ff": ff,
+            "f": f,
+            "Z_abs": Z_abs,
+            "Z_Re": Z_Re,
+            "Z_Im": Z_Im,
+            "V_abs": V_abs,
+            "V_Re": V_Re,
+            "V_Im": V_Im
+        }
+        self.update_plot3_by_selector()
+
+        self.logger.info(f"画图完成！")
+        self.test_state.setText("测试完成")
+        utils.set_run_button_enabled(self.run_test_button, True)
+        AudioSessionManager.release(self)
 
     @staticmethod
     def generate_calibrated_signal(signal_info, samplerate):
@@ -545,9 +685,13 @@ class MainWindow(QMainWindow):
         data = data * cal_amplitude
         return True, data, cal_amplitude, None
 
+    def update_time_plot(self, time, mic1_pa, mic2_pa):
+        self.curve1.setData(time, mic1_pa)
+        self.curve2.setData(time, mic2_pa)
+
     @staticmethod
     def load_calibration_data():
-        # 构造校准文件路径
+        # 读取校准数据
         cal_dir = os.path.join(os.getcwd(), "！校准")
         mic1_path = os.path.join(cal_dir, "MIC1.txt")
         mic2_path = os.path.join(cal_dir, "MIC2.txt")
@@ -559,6 +703,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def load_record_data():
+        # 读取采集数据
         record_dir = os.path.join(os.getcwd(), "！采集")
         mic1_path = os.path.join(record_dir, "MIC1.txt")
         mic2_path = os.path.join(record_dir, "MIC2.txt")
@@ -716,40 +861,28 @@ class MainWindow(QMainWindow):
         # self.plot3.plotItem.enableAutoRange(axis='y', enable=False)  # Y轴范围不变
         self.plot_state = True
 
-    def cal_impedance(self):
-        self.init_config()
-        # 获取设备采样率
-        samplerate = utils.get_device_info()
-        self.test_state.setText("调试中...")
-        QtWidgets.QApplication.processEvents()
-        mic1_cal, mic2_cal = self.load_calibration_data()
-        mic1_data, mic2_data = self.load_record_data()
-        ff, f, Z_abs, Z_Re, Z_Im, V_abs, V_Re, V_Im = utils.calculate_impedance_velocity(
-            mic2=mic2_data,
-            mic1=mic1_data,
-            mic2_cal=mic2_cal,
-            mic1_cal=mic1_cal,
-            sf=samplerate,
-            temp=self.tube_params.get("tube_temperature"),
-            dia_tube_mm=self.tube_params.get("tubu_inner_diameter"),
-            mic_dis_mm=self.tube_params.get("microphone_to_sample_distance"),
-            s2=self.tube_params.get("sample_area"),
-            sen=self.tube_params.get("microphone_sensitivity")
-        )
-        self.test_result = {
-            "ff": ff,
-            "f": f,
-            "Z_abs": Z_abs,
-            "Z_Re": Z_Re,
-            "Z_Im": Z_Im,
-            "V_abs": V_abs,
-            "V_Re": V_Re,
-            "V_Im": V_Im
-        }
-        self.update_plot3_by_selector()
+    def del_cross(self):
+        # 清竖线
+        if hasattr(self, "vLine") and self.vLine is not None:
+            self.plot3.removeItem(self.vLine)
+            self.vLine = None
 
-        self.logger.info(f"调试完成！")
-        self.test_state.setText("调试完成")
+        # 清横线
+        if hasattr(self, "hLine") and self.hLine is not None:
+            self.plot3.removeItem(self.hLine)
+            self.hLine = None
+
+        # 清提示文字
+        if hasattr(self, "text") and self.text is not None:
+            self.plot3.removeItem(self.text)
+            self.text = None
+
+        # 清点击的小圆点
+        if hasattr(self, "click_marker") and self.click_marker is not None:
+            self.plot3.removeItem(self.click_marker)
+            self.click_marker = None
+        # 标记：当前没有十字线了
+        self.crosshair_enabled = False
 
     def popup_pdf(self):
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
