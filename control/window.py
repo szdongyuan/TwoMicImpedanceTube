@@ -8,7 +8,7 @@ import numpy as np
 import sounddevice as sd
 import pyqtgraph
 from PyQt5 import QtWidgets
-from PyQt5.QtCore import QFile, Qt, QTimer
+from PyQt5.QtCore import QFile, Qt, QTimer, QEvent
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QMessageBox, \
     QVBoxLayout, QMenu, QAction, QFileDialog
@@ -62,6 +62,8 @@ class MainWindow(QMainWindow):
         self.load_basic_params_config()
         self.init_slider()
         self.crosshair_enabled = False
+        # 当前十字线选中的数据点下标，左右键移动时会用到
+        self.selected_point_index = None
 
     def init_ui(self):
         ui_file = QFile(":ui/window.ui")
@@ -181,6 +183,9 @@ class MainWindow(QMainWindow):
         self.plot3.getAxis('left').setTextPen("black")
         # 清空范围限制，允许滚轮缩放
         self.plot3.setAutoVisible(True)  # 启用自动范围调整
+        # 让 plot3 能接收键盘事件，这样双击选点后可以按左右键移动
+        self.plot3.setFocusPolicy(Qt.StrongFocus)
+        self.plot3.installEventFilter(self)
         self.plot3.plotItem.scene().sigMouseMoved.connect(self.mov)
         # legend 只创建一次
         self.legend = self.plot3.addLegend(offset=(-10, 10))
@@ -193,80 +198,154 @@ class MainWindow(QMainWindow):
             x_log_clicked = mouse_point.x()
             freq_clicked = 10 ** x_log_clicked  # 实际频率
 
-            plot_type = self.plot_type_selector.currentText()
-
-            def safe_log(a):
-                a = np.asarray(a, dtype=float)
-                a[a <= 0] = np.nan  # 防止取对数报错
-                return np.log10(a)
-
-            if plot_type == "传输阻抗率Z abs":
-                # 获取当前显示的曲线数据
-                freq_array = np.asarray(self.test_result["ff"], dtype=float)
-                y_array = self.test_result["Z_abs"]
-            elif plot_type == "传输阻抗率Z Re":
-                freq_array = np.asarray(self.test_result["ff"], dtype=float)
-                y_array = np.abs(self.test_result["Z_Re"])
-            elif plot_type == "传输阻抗率Z Im":
-                freq_array = np.asarray(self.test_result["ff"], dtype=float)
-                y_array = np.abs(self.test_result["Z_Im"])
-            elif plot_type == "质点速度v abs":
-                freq_array = np.asarray(self.test_result["f"], dtype=float)
-                y_array = self.test_result["V_abs"]
-            elif plot_type == "质点速度v Re":
-                freq_array = np.asarray(self.test_result["f"], dtype=float)
-                y_array = self.test_result["V_Re"]
-            elif plot_type == "质点速度v Im":
-                freq_array = np.asarray(self.test_result["f"], dtype=float)
-                y_array = self.test_result["V_Im"]
-            else:
+            data = self.get_current_plot_data()
+            if data is None:
                 return
-            y_disp = safe_log(y_array)
-            x_disp = np.log10(freq_array)
-            # 如果启用了平滑处理
-            if self.soft_value > 3:
-                y_disp = savgol_filter(y_disp, window_length=self.soft_value, polyorder=3)
+            freq_array, _, _ = data
+
             # 找出频率中最接近点击频率的点
             index = np.abs(freq_array - freq_clicked).argmin()
-            x_log = float(x_disp[index])  # 显示坐标（log10 频率）
-            y_log = float(y_disp[index])  # 显示坐标（log10 幅值）
-            x_lin = float(freq_array[index])  # 线性频率x
-            y_lin = float(10 ** y_disp[index]) # 线性幅值y, 根据对数平滑生成的,而非原始数据
-
             self.logger.info(f"双击事件: 频率(x): {freq_clicked:.2f} Hz, 最近数据索引: {index}")
-            self.logger.info(f"对数频率位置: {x_log:.4f}), 对数幅值位置: {y_log:.4f}")
-            self.logger.info(f"频率线性值: {x_lin:.2f} Hz, 幅值线性值: {y_lin:.4f}")
-            # 初始化十字线和文字提示
-            if not self.crosshair_enabled:
-                self.vLine = pyqtgraph.InfiniteLine(angle=90, movable=False, pen='r')
-                self.hLine = pyqtgraph.InfiniteLine(angle=0, movable=False, pen='r')
-                self.text = pyqtgraph.TextItem("", anchor=(0, 1), fill=pyqtgraph.mkBrush(255, 255, 255, 200),
-                                               border='k')
-                self.plot3.addItem(self.vLine, ignoreBounds=True)
-                self.plot3.addItem(self.hLine, ignoreBounds=True)
-                self.plot3.addItem(self.text)
-                self.plot3.plotItem.scene().sigMouseMoved.connect(self.mov)
-                self.crosshair_enabled = True
+            self.show_crosshair_at_index(index)
+            # 焦点给图表，否则左右键可能会被其它控件吃掉
+            self.plot3.setFocus()
 
-            self.vLine.setPos(x_log)
-            self.hLine.setPos(y_log)
+    def get_current_plot_data(self):
+        """
+        获取当前下拉框对应曲线的数据。
+        返回原始频率、log10(x)、log10(y)，十字线显示和左右键移动都复用它。
+        """
+        if not self.test_result:
+            return None
 
-            # 添加点击标记
-            if hasattr(self, "click_marker"):
-                self.plot3.removeItem(self.click_marker)
-            self.click_marker = pyqtgraph.ScatterPlotItem(
-                [x_log], [y_log],
-                symbol='o', size=4, brush=pyqtgraph.mkBrush(255, 255, 0), pen='k'
-            )
-            self.plot3.addItem(self.click_marker)
+        plot_type = self.plot_type_selector.currentText()
 
-            # 提示框（显示线性频率和与图一致的线性幅值）
-            self.text.setHtml(
-                f"<div style='background-color:white; padding:2px;'>"
-                f"<b>频率(x):</b> {x_lin:.2f} Hz<br>"
-                f"<b>幅值(y):</b> {y_lin:.4f}</div>"
-            )
-            self.text.setPos(x_log, y_log)
+        def safe_log(a):
+            a = np.asarray(a, dtype=float).copy()
+            a[a <= 0] = np.nan  # 防止取对数报错
+            return np.log10(a)
+
+        if plot_type == "传输阻抗率Z abs":
+            # 获取当前显示的曲线数据
+            freq_array = np.asarray(self.test_result["ff"], dtype=float)
+            y_array = self.test_result["Z_abs"]
+        elif plot_type == "传输阻抗率Z Re":
+            freq_array = np.asarray(self.test_result["ff"], dtype=float)
+            y_array = np.abs(self.test_result["Z_Re"])
+        elif plot_type == "传输阻抗率Z Im":
+            freq_array = np.asarray(self.test_result["ff"], dtype=float)
+            y_array = np.abs(self.test_result["Z_Im"])
+        elif plot_type == "质点速度v abs":
+            freq_array = np.asarray(self.test_result["f"], dtype=float)
+            y_array = self.test_result["V_abs"]
+        elif plot_type == "质点速度v Re":
+            freq_array = np.asarray(self.test_result["f"], dtype=float)
+            y_array = self.test_result["V_Re"]
+        elif plot_type == "质点速度v Im":
+            freq_array = np.asarray(self.test_result["f"], dtype=float)
+            y_array = self.test_result["V_Im"]
+        else:
+            return None
+
+        # 如果 freq_array 里面一个频率点都没有，就直接返回 None
+        if len(freq_array) == 0:
+            return None
+
+        y_disp = safe_log(y_array)
+        x_disp = np.log10(freq_array)
+        # 如果启用了平滑处理
+        if self.soft_value > 3:
+            y_disp = savgol_filter(y_disp, window_length=self.soft_value, polyorder=3)
+
+        return freq_array, x_disp, y_disp
+
+    def show_crosshair_at_index(self, index):
+        """
+        把十字线、小黄点和提示框移动到指定的数据点。
+        index 是数据点下标，不是频率值。
+        """
+        data = self.get_current_plot_data()
+        if data is None:
+            return
+
+        freq_array, x_disp, y_disp = data
+        # 防止按到最左/最右后越界
+        index = max(0, min(int(index), len(freq_array) - 1))
+        self.selected_point_index = index
+
+        x_log = float(x_disp[index])  # 显示坐标（log10 频率）
+        y_log = float(y_disp[index])  # 显示坐标（log10 幅值）
+        x_lin = float(freq_array[index])  # 线性频率x
+        y_lin = float(10 ** y_disp[index]) # 线性幅值y, 根据对数平滑生成的,而非原始数据
+
+        self.logger.info(f"对数频率位置: {x_log:.4f}), 对数幅值位置: {y_log:.4f}")
+        self.logger.info(f"频率线性值: {x_lin:.2f} Hz, 幅值线性值: {y_lin:.4f}")
+
+        # 初始化十字线和文字提示
+        if not self.crosshair_enabled:
+            self.vLine = pyqtgraph.InfiniteLine(angle=90, movable=False, pen='r')
+            self.hLine = pyqtgraph.InfiniteLine(angle=0, movable=False, pen='r')
+            self.text = pyqtgraph.TextItem("", anchor=(0, 1), fill=pyqtgraph.mkBrush(255, 255, 255, 200),
+                                           border='k')
+            self.plot3.addItem(self.vLine, ignoreBounds=True)
+            self.plot3.addItem(self.hLine, ignoreBounds=True)
+            self.plot3.addItem(self.text)
+            self.crosshair_enabled = True
+
+        self.vLine.setPos(x_log)
+        self.hLine.setPos(y_log)
+
+        # 添加点击标记
+        if hasattr(self, "click_marker") and self.click_marker is not None:
+            self.plot3.removeItem(self.click_marker)
+        self.click_marker = pyqtgraph.ScatterPlotItem(
+            [x_log], [y_log],
+            symbol='o', size=4, brush=pyqtgraph.mkBrush(255, 255, 0), pen='k'
+        )
+        self.plot3.addItem(self.click_marker)
+
+        # 提示框（显示线性频率和与图一致的线性幅值）
+        self.text.setHtml(
+            f"<div style='background-color:white; padding:2px;'>"
+            f"<b>频率(x):</b> {x_lin:.2f} Hz<br>"
+            f"<b>幅值(y):</b> {y_lin:.4f}</div>"
+        )
+        self.text.setPos(x_log, y_log)
+
+    def move_selected_point(self, step):
+        """
+        左右键移动当前选中点。
+        step=-1 表示左移一个数据点，step=1 表示右移一个数据点。
+        """
+        if not self.crosshair_enabled or self.selected_point_index is None:
+            return False
+
+        data = self.get_current_plot_data()
+        if data is None:
+            return False
+
+        freq_array, _, _ = data
+        new_index = self.selected_point_index + step
+        new_index = max(0, min(new_index, len(freq_array) - 1))
+        self.show_crosshair_at_index(new_index)
+        return True
+
+    def eventFilter(self, obj, event):
+        # 图表获得焦点时，优先在这里处理左右键
+        if obj is self.plot3 and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Left and self.move_selected_point(-1):
+                return True
+            if event.key() == Qt.Key_Right and self.move_selected_point(1):
+                return True
+        return super().eventFilter(obj, event)
+
+    def keyPressEvent(self, event):
+        # 兜底处理：如果焦点在主窗口，也能用左右键移动十字线
+        if event.key() == Qt.Key_Left and self.move_selected_point(-1):
+            return
+        if event.key() == Qt.Key_Right and self.move_selected_point(1):
+            return
+        super().keyPressEvent(event)
 
     def mov(self, pos):
         if self.plot3.sceneBoundingRect().contains(pos):
@@ -804,6 +883,8 @@ class MainWindow(QMainWindow):
 
         # 十字线显示开关
         self.crosshair_enabled = False
+        # 重新画图后，旧的选中下标可能不属于当前曲线，先清空
+        self.selected_point_index = None
 
         # 绑定双击事件
         try:
@@ -884,6 +965,8 @@ class MainWindow(QMainWindow):
             self.click_marker = None
         # 标记：当前没有十字线了
         self.crosshair_enabled = False
+        # 没有十字线时，也不保留当前选中点
+        self.selected_point_index = None
 
     def popup_pdf(self):
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
