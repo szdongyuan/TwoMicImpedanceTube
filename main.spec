@@ -28,7 +28,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='2MIC薄层材料测试系统',
+    name='2MIC薄层材料测试系统v1.0',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -44,5 +44,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=True,
-    name='2MIC薄层材料测试系统',
+    name='2MIC薄层材料测试系统v1.0',
 )
