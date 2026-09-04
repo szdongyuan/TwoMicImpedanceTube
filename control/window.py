@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 
 import numpy as np
 import sounddevice as sd
@@ -11,11 +12,12 @@ from PyQt5 import QtWidgets
 from PyQt5.QtCore import QFile, Qt, QTimer, QEvent
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QMessageBox, \
-    QVBoxLayout, QMenu, QAction, QFileDialog
+    QVBoxLayout, QMenu, QAction, QFileDialog, QInputDialog, QColorDialog
 from PyQt5.uic import loadUi
 from pyqtgraph import mkPen
 from scipy.signal import savgol_filter
 
+from control.config_tree_interface import ConfigTreeInterface
 from control.imp_tube_params_setting_interface import ImptubeParamsSetInterface
 from control.log_manager import LogManager
 from control.mic_adjust_interface import MicAdjustInterface
@@ -36,6 +38,7 @@ class MainWindow(QMainWindow):
         self.imptube_window = None
         self.output_window = None
         self.mic_window = None
+        self.config_tree_window = None
         self.output_voltage_window = None
         self.signal_info = None
         self.tube_params = None
@@ -61,6 +64,7 @@ class MainWindow(QMainWindow):
         self.init_view()
         self.load_basic_params_config()
         self.init_slider()
+        self.history_line = []
         self.crosshair_enabled = False
         # 当前十字线选中的数据点下标，左右键移动时会用到
         self.selected_point_index = None
@@ -93,10 +97,13 @@ class MainWindow(QMainWindow):
         self.action_6.triggered.connect(self.open_output_voltage_interface)
         self.action_14.triggered.disconnect()
         self.action_14.triggered.connect(self.popup_pdf)
+        self.history_data_setting.triggered.connect(self.open_config_tree_interface)
         self.run_test_button.clicked.connect(self.run_test)
         self.save_test_data.triggered.disconnect()
         self.save_test_data.triggered.connect(self.save_test_data_to_excel)
         self.plot_type_selector.currentIndexChanged.connect(self.update_plot3_by_selector)
+        # 监听来自历史数据设置的刷新请求
+        sign.update_plot3_by_selector_sign.connect(self.update_plot3_by_selector)
 
     def only_view_all_menu(self):
         def context_menu(event):
@@ -159,8 +166,8 @@ class MainWindow(QMainWindow):
         layout3.addWidget(self.plot3)
         self.frame_3.setLayout(layout3)
         self.plot3.setBackground('white')
-        self.plot3.setMenuEnabled(False) # 禁用菜单
-        self.only_view_all_menu()
+        self.plot3.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.plot3.customContextMenuRequested.connect(self.on_plot3_menu)
 
         self.plot3.getAxis('bottom').enableAutoSIPrefix(False)
         self.plot3.getAxis('left').enableAutoSIPrefix(False) # 禁用自动转换单位
@@ -347,6 +354,113 @@ class MainWindow(QMainWindow):
             return
         super().keyPressEvent(event)
 
+    def on_plot3_menu(self, pos):
+        menu = self.plot3.getPlotItem().getViewBox().menu
+
+        # 去掉“Export/导出”相关子菜单/动作，仅保留 X axis / Y axis 等
+        for act in list(menu.actions()):
+            try:
+                text = act.text()
+            except Exception:
+                text = ""
+            if text and ("Export" in text or "Options" in text or "Mouse" in text):
+                menu.removeAction(act)
+
+        # 确保“保存当前曲线”只添加一次；若已存在则仅保证信号连接正确
+        existing_save_action = None
+        for i in menu.actions():
+            if i.text() == "保存当前曲线":
+                existing_save_action = i
+                break
+
+        if existing_save_action is None:
+            act = QAction("保存当前曲线", self)
+            act.triggered.connect(self.save_test_result_to_json)
+            menu.addAction(act)
+        else:
+            pass
+        # 弹出完整菜单（自带 X axis 等），自定义按钮也在其中
+        menu.exec_(self.plot3.mapToGlobal(pos))
+
+    def save_test_result_to_json(self):
+        """
+        右键“保存当前曲线”：
+        - 询问名称、颜色（用于左侧历史数据设置展示）
+        - 直接把 self.test_result 整个追加到 tree_config.json 的 saved_history_line
+        """
+        if not self.test_result:
+            QMessageBox.warning(self, "提示", "无测试结果，请先进行测试！")
+            return
+
+        # 1) 输入名称（默认给一个）
+        default_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        name, ok = QInputDialog.getText(self, "保存历史线名称", "请输入名称：", text=default_name)
+        if not ok:
+            return
+        if not name.strip():
+            QMessageBox.warning(self, "提示", "名称不能为空！")
+            return
+        name = name.strip()
+
+        # 2) 选择颜色
+        color = QColorDialog.getColor(parent=self, title="选择颜色")
+        if not color.isValid():
+            return
+        colour_str = color.name()  # 例如 "#1e90ff"
+
+        # 3) 读取配置
+        res, content = utils.get_config_content("tree_config.json")
+        if not res:
+            self.logger.error("读取 tree_config.json 失败")
+            QMessageBox.warning(self, "错误", "读取配置失败，无法写入。")
+            return
+
+        # 4) 计算新索引
+        new_index = len(content["line"]["manage_history_line"])
+        if new_index >= 10:
+            QMessageBox.warning(self, "提示", f"历史数据已达 10 条，最多 10 条，请先删除后再保存。")
+            return
+
+        # 5) 深度转换：numpy -> 纯 Python
+        def json_safe(o):
+            # numpy 数组
+            if isinstance(o, np.ndarray):
+                return o.tolist()
+            # numpy 标量
+            if isinstance(o, np.generic):
+                return o.item()
+            # 容器
+            if isinstance(o, dict):
+                return {k: json_safe(v) for k, v in o.items()}
+            if isinstance(o, (list, tuple)):
+                return [json_safe(v) for v in o]
+            # 其它直接返回
+            return o
+
+        saved_obj = json_safe(self.test_result)
+        content["line"]["saved_history_line"].append(saved_obj)
+
+        # 6) 展示用信息
+        content["line"]["manage_history_line"][str(new_index)] = {
+            "state": "True",  # 默认显示
+            "colour": colour_str,  # 用户选择的颜色
+            "line_name": name  # 用户输入的名字
+        }
+
+        # 7) 写回
+        ok = utils.write_config_content("tree_config.json", content)
+        if ok:
+            QMessageBox.information(self, "成功", f"已保存历史线：{name}\n颜色：{colour_str}\n索引：{new_index}")
+        else:
+            QMessageBox.critical(self, "错误", "写入 tree_config.json 失败，请重试。")
+
+        # 8) 刷新配置界面
+        if self.config_tree_window and self.config_tree_window.isVisible():
+            self.config_tree_window.fill_page_2()
+        # 9) 刷新self.plot3
+        self.update_plot3_by_selector()
+        QApplication.processEvents()
+
     def mov(self, pos):
         if self.plot3.sceneBoundingRect().contains(pos):
             mouse_point = self.plot3.getViewBox().mapSceneToView(pos)
@@ -497,6 +611,13 @@ class MainWindow(QMainWindow):
         self.output_voltage_window.raise_()
         self.output_voltage_window.activateWindow()
 
+    def open_config_tree_interface(self):
+        if self.config_tree_window is None:
+            self.config_tree_window = ConfigTreeInterface(self)
+        self.config_tree_window.show()
+        self.config_tree_window.raise_()
+        self.config_tree_window.activateWindow()
+
     def init_config(self):
         output_path = utils.get_config_path("output_signal_setting.json")
         try:
@@ -554,6 +675,10 @@ class MainWindow(QMainWindow):
             self.curve1.setData([], [])
             self.curve2.setData([], [])
             self.curve3.setData([], [])
+            # 清历史线(legend)也会一起清除
+            for line in getattr(self, "history_line", []):
+                self.plot3.removeItem(line)
+            self.history_line = []
             # 清除 十字线
             if self.crosshair_enabled:
                 self.del_cross()
@@ -851,7 +976,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "错误", f"保存失败：{str(e)}")
 
-    def update_plot3_by_selector(self):
+    def update_plot3_by_selector(self, source=None):
         """
         根据平滑值来重新画图
         """
@@ -869,20 +994,24 @@ class MainWindow(QMainWindow):
         elif text == "质点速度v Im":
             self.plot3.setLabel('left', 'v Im', units='m/s')
         else:
-            print("没这个选择项")
+            QMessageBox.warning(self, "提示", f"无{text}选项")
+            return
 
         if not self.test_result:
-            QMessageBox.warning(self, "提示", "无测试结果，请先进行测试！")
-            return
-        self.plot3.clear()
+            if source == "config_tree":
+                return
+            else:
+                QMessageBox.warning(self, "提示", "无测试结果，请先进行测试！")
+                return
 
-        # 十字线和提示框初始化但不添加到图上
-        self.vLine = pyqtgraph.InfiniteLine(angle=90, movable=False, pen='r')
-        self.hLine = pyqtgraph.InfiniteLine(angle=0, movable=False, pen='r')
-        self.text = pyqtgraph.TextItem("", anchor=(0, 1), fill=pyqtgraph.mkBrush(255, 255, 255, 200), border='k')
+        # 清历史线
+        for line in getattr(self, "history_line", []):
+            self.plot3.removeItem(line)
+        self.history_line = []
 
-        # 十字线显示开关
-        self.crosshair_enabled = False
+        # 清十字线（不然会残留）
+        if self.crosshair_enabled:
+            self.del_cross()
         # 重新画图后，旧的选中下标可能不属于当前曲线，先清空
         self.selected_point_index = None
 
@@ -893,55 +1022,48 @@ class MainWindow(QMainWindow):
             pass
         self.plot3.scene().sigMouseClicked.connect(self.on_plot3_clicked)
 
+        # 取当前曲线数据 + 平滑
         if text == "传输阻抗率Z abs":
             log_ff = np.log10(self.test_result["ff"])
-            log_Z_abs = np.log10(self.test_result["Z_abs"])
-            if self.soft_value > 3:
-                log_Z_abs = savgol_filter(log_Z_abs, window_length=self.soft_value, polyorder=3)
+            y = np.log10(self.test_result["Z_abs"])
             # index = np.where(self.test_result["ff"] == 1000)[0]
-            # print(index, self.test_result["Z_abs"][index], np.log10(self.test_result["Z_abs"])[index], log_Z_abs[index])
-            self.plot3.plot(log_ff, log_Z_abs, pen=mkPen(color='black', width=2))
+            # print(index, self.test_result["Z_abs"][index], np.log10(self.test_result["Z_abs"])[index], y[index])
 
         elif text == "传输阻抗率Z Re":
             log_ff = np.log10(self.test_result["ff"])
-            log_Z_Re = np.log10(np.abs(self.test_result["Z_Re"]))
-            if self.soft_value > 3:
-                log_Z_Re = savgol_filter(log_Z_Re, window_length=self.soft_value, polyorder=3)
-            self.plot3.plot(log_ff, log_Z_Re, pen=mkPen(color='black', width=2))
+            y = np.log10(np.abs(self.test_result["Z_Re"]))
 
         elif text == "传输阻抗率Z Im":
             log_ff = np.log10(self.test_result["ff"])
-            log_Z_Im = np.log10(np.abs(self.test_result["Z_Im"]))
-            if self.soft_value > 3:
-                log_Z_Im = savgol_filter(log_Z_Im, window_length=self.soft_value, polyorder=3)
-            self.plot3.plot(log_ff, log_Z_Im, pen=mkPen(color='black', width=2))
+            y = np.log10(np.abs(self.test_result["Z_Im"]))
 
         elif text == "质点速度v abs":
-            log_f = np.log10(self.test_result["f"])
-            log_V_abs = np.log10(self.test_result["V_abs"])
-            if self.soft_value > 3:
-                log_V_abs = savgol_filter(log_V_abs, window_length=self.soft_value, polyorder=3)
-            self.plot3.plot(log_f, log_V_abs, pen=mkPen(color='black', width=2))
+            log_ff = np.log10(self.test_result["f"])
+            y = np.log10(self.test_result["V_abs"])
 
         elif text == "质点速度v Re":
-            log_f = np.log10(self.test_result["f"])
-            log_V_Re = np.log10(self.test_result["V_Re"])
-            if self.soft_value > 3:
-                log_V_Re = savgol_filter(log_V_Re, window_length=self.soft_value, polyorder=3)
-            self.plot3.plot(log_f, log_V_Re, pen=mkPen(color='black', width=2))
+            log_ff = np.log10(self.test_result["f"])
+            y = np.log10(self.test_result["V_Re"])
 
         elif text == "质点速度v Im":
-            log_f = np.log10(self.test_result["f"])
-            log_V_Im = np.log10(self.test_result["V_Im"])
-            if self.soft_value > 3:
-                log_V_Im = savgol_filter(log_V_Im, window_length=self.soft_value, polyorder=3)
-            self.plot3.plot(log_f, log_V_Im, pen=mkPen(color='black', width=2))
+            log_ff = np.log10(self.test_result["f"])
+            y = np.log10(self.test_result["V_Im"])
         else:
-            print("无")
+            QMessageBox.warning(self, "提示", f"无{text}选项")
+            return
 
+        if self.soft_value > 3:
+            y = savgol_filter(y, window_length=self.soft_value, polyorder=3)
+
+        # 关键：只 setData，不再 plot()
+        self.curve3.setData(log_ff, y)
+        self.curve3.show()
         self.plot3.plotItem.enableAutoRange(axis='xy', enable=True)  # X 和 Y 轴的自动范围调整
         # self.plot3.plotItem.enableAutoRange(axis='y', enable=False)  # Y轴范围不变
         self.plot_state = True
+
+        # 画历史线
+        self.update_history_lines()
 
     def del_cross(self):
         # 清竖线
@@ -967,6 +1089,66 @@ class MainWindow(QMainWindow):
         self.crosshair_enabled = False
         # 没有十字线时，也不保留当前选中点
         self.selected_point_index = None
+
+    def update_history_lines(self):
+        # 读取配置
+        res, content = utils.get_config_content("tree_config.json")
+        if not res:
+            self.logger.error("读取 tree_config.json 失败")
+            return
+
+        line = content.get("line", {})
+        if line["is_display_history_line"] == 0:
+            self.logger.info("历史线显示总开关为 0，跳过绘制。")
+            return
+
+        # 取出 state 为 True 的索引
+        id_list = []
+        for k, v in line["manage_history_line"].items():
+            state_val = v.get("state", False)
+            line_name = v.get("line_name")
+            if state_val == "True":
+                try:
+                    id_list.append((int(k), v.get("colour"), line_name))
+                except Exception:
+                    self.logger.warning(f"manage_history_line 的键无法转 int: {k}")
+        id_list.sort()
+
+        self.logger.info(f"启用的历史线序号：{id_list}")
+        for i, colour, line_name in id_list:
+            self.add_history_line(colour, line["saved_history_line"][i], line_name)
+
+    def add_history_line(self, colour, original_data, line_name):
+        text = self.plot_type_selector.currentText()
+
+        #todo 与 ImpedanceTubeTestingSystem 不同：这里按 2MIC 薄层的六种下拉曲线映射历史数据。
+        if text == "传输阻抗率Z abs":
+            log_ff = np.log10(original_data["ff"])
+            y = np.log10(original_data["Z_abs"])
+        elif text == "传输阻抗率Z Re":
+            log_ff = np.log10(original_data["ff"])
+            y = np.log10(np.abs(original_data["Z_Re"]))
+        elif text == "传输阻抗率Z Im":
+            log_ff = np.log10(original_data["ff"])
+            y = np.log10(np.abs(original_data["Z_Im"]))
+        elif text == "质点速度v abs":
+            log_ff = np.log10(original_data["f"])
+            y = np.log10(original_data["V_abs"])
+        elif text == "质点速度v Re":
+            log_ff = np.log10(original_data["f"])
+            y = np.log10(original_data["V_Re"])
+        elif text == "质点速度v Im":
+            log_ff = np.log10(original_data["f"])
+            y = np.log10(original_data["V_Im"])
+        else:
+            return
+
+        if self.soft_value > 3:
+            y = savgol_filter(y, window_length=self.soft_value, polyorder=3)
+
+        # 这里新增：直接画、并记录到 history_line，方便下次 removeItem
+        item = self.plot3.plot(log_ff, y, pen=mkPen(color=colour, width=1), name=line_name)
+        self.history_line.append(item)
 
     def popup_pdf(self):
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QDialog,
     QGraphicsPixmapItem,
     QGraphicsScene,
-    QVBoxLayout,
+    QVBoxLayout, QApplication,
 )
 from scipy.signal import get_window, csd, welch, savgol_filter
 from scipy.fft import fft
@@ -350,7 +350,8 @@ def copy_all_configs_to_base_dir():
         "output_signal_setting.json",
         "basic_params.json",
         "calibration_coefficients.json",
-        "mic_calibration.json"
+        "mic_calibration.json",
+        "tree_config.json"  #todo 与 ImpedanceTubeTestingSystem 不同：当前项目只需要一份历史线配置。
     ]
 
     for filename in json_files:
@@ -711,3 +712,17 @@ def get_yaml_content(filename):
         return True, config, None
     except Exception as e:
         return False, None, str(e)
+
+
+def resize_by_ui_with_screen(obj, ratio=0.8):
+    """
+    ratio: 屏幕可用区域的比例上限，例如 0.8 表示不超过 4/5
+    """
+    ui_w, ui_h = obj.width(), obj.height()
+
+    screen = QApplication.primaryScreen()
+    size = screen.availableGeometry()
+    max_w = int(size.width() * ratio)
+    max_h = int(size.height() * ratio)
+
+    obj.resize(min(ui_w, max_w), min(ui_h, max_h))

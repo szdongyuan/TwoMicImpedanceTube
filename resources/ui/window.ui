@@ -282,6 +282,8 @@ font: bold 12pt &quot;Microsoft YaHei&quot;;  /* 使字体加粗 */</string>
     <addaction name="separator"/>
     <addaction name="action_3"/>
     <addaction name="separator"/>
+    <addaction name="history_data_setting"/>
+    <addaction name="separator"/>
    </widget>
    <widget class="QMenu" name="menu_2">
     <property name="title">
@@ -381,6 +383,11 @@ font: bold 12pt &quot;Microsoft YaHei&quot;;  /* 使字体加粗 */</string>
   <action name="action_6">
    <property name="text">
     <string>输入/输出校准</string>
+   </property>
+  </action>
+  <action name="history_data_setting">
+   <property name="text">
+    <string>历史数据设置</string>
    </property>
   </action>
  </widget>
