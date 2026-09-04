@@ -351,7 +351,7 @@ def copy_all_configs_to_base_dir():
         "basic_params.json",
         "calibration_coefficients.json",
         "mic_calibration.json",
-        "tree_config.json"  #todo 与 ImpedanceTubeTestingSystem 不同：当前项目只需要一份历史线配置。
+        "tree_config.json"
     ]
 
     for filename in json_files:

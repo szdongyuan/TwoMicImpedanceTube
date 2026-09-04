@@ -1121,7 +1121,6 @@ class MainWindow(QMainWindow):
     def add_history_line(self, colour, original_data, line_name):
         text = self.plot_type_selector.currentText()
 
-        #todo 与 ImpedanceTubeTestingSystem 不同：这里按 2MIC 薄层的六种下拉曲线映射历史数据。
         if text == "传输阻抗率Z abs":
             log_ff = np.log10(original_data["ff"])
             y = np.log10(original_data["Z_abs"])
