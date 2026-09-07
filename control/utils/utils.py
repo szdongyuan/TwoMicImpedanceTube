@@ -24,6 +24,9 @@ from control.output_voltage_interface import SoundcardCalibrationManager
 from custom.running_consts import base_dir, DEFAULT_DIR
 
 
+utils_logger = LogManager.set_log_handler("core")
+
+
 def set_adjust_button_enabled(button, enabled: bool):
     button.setEnabled(enabled)
     if enabled:
@@ -317,7 +320,7 @@ def calculate_impedance_velocity(
 
     index = np.where(ff_subset == 1000)[0]
 
-    print(index, Z_abs[index])
+    utils_logger.info(f"1000Hz 对应索引: {index}, Z_abs: {Z_abs[index]}")
     return ff_subset, f_subset, Z_abs, Z_Re, Z_Im, V_abs, V_Re, V_Im
 
 def smooth_data(data, window_length=51, polyorder=3):
@@ -388,7 +391,7 @@ def get_config_path(filename):
             # 源码运行时, 根目录下
             return os.path.join(DEFAULT_DIR, "resources", "config", filename)
     except Exception as e:
-        print(f"获取配置路径失败: {e}")
+        utils_logger.error(f"获取配置路径失败: {e}")
         return None
 
 def get_config_content(filename):
@@ -424,7 +427,72 @@ def write_config_content(filename, config):
             json.dump(config, f, indent=4, ensure_ascii=False)
         return True
     except Exception as e:
-        print(f"写入文件失败: {e}")
+        utils_logger.error(f"写入文件失败: {e}")
+        return False
+
+def get_history_data_path(data_file, config_filename="tree_config.json"):
+    """
+    将配置里保存的 data_file 转成实际磁盘路径。
+    data_file 通常是相对 tree_config.json 所在目录的路径，例如 history_lines/xxx.npz。
+    """
+    if not data_file:
+        return None
+    if os.path.isabs(data_file):
+        return data_file
+    config_path = get_config_path(config_filename)
+    return os.path.normpath(os.path.join(os.path.dirname(config_path), data_file))
+
+def save_history_line_data(config_filename, data_file, data):
+    """
+    保存单条历史曲线的大数组数据。
+    npz 是 numpy 的压缩归档格式，适合保存 ff、Z_abs、V_abs 这类数组。
+    """
+    path = get_history_data_path(data_file, config_filename)
+    if not path:
+        return False
+
+    try:
+        # 创建resources/config/history_lines文件夹
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        array_data = {}
+        for key, value in data.items():
+            # 统一转成 numpy 数组后保存，读取时可以保持原来的数值结构。
+            array_data[key] = np.asarray(value)
+        # 创建并写入 .npz 文件
+        np.savez_compressed(path, **array_data)
+        return True
+    except Exception as e:
+        utils_logger.error(f"保存历史线数据失败: {e}")
+        return False
+
+def load_history_line_data(config_filename, data_file):
+    """
+    读取历史曲线数据。
+    data_file 是配置中记录的 npz 文件路径。
+    """
+    if not data_file:
+        return None
+
+    path = get_history_data_path(data_file, config_filename)
+    try:
+        # allow_pickle=False 避免加载任意 Python 对象，只读取普通数组数据。
+        with np.load(path, allow_pickle=False) as npz:
+            return {key: npz[key] for key in npz.files}
+    except Exception as e:
+        utils_logger.error(f"读取历史线数据失败: {e}")
+        return None
+
+def delete_history_line_data(config_filename, data_file):
+    """删除一条历史曲线对应的 npz 数据文件。"""
+    path = get_history_data_path(data_file, config_filename)
+    if not path or not os.path.exists(path):
+        return True
+
+    try:
+        os.remove(path)
+        return True
+    except Exception as e:
+        utils_logger.error(f"删除历史线数据失败: {e}")
         return False
 
 def get_device_info():

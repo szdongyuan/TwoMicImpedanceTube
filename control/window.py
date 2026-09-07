@@ -65,6 +65,8 @@ class MainWindow(QMainWindow):
         self.load_basic_params_config()
         self.init_slider()
         self.history_line = []
+        # 缓存已读取的历史曲线数据，避免切换图表类型时反复读取 npz 文件。
+        self._history_line_data_cache = {}
         self.crosshair_enabled = False
         # 当前十字线选中的数据点下标，左右键移动时会用到
         self.selected_point_index = None
@@ -386,7 +388,7 @@ class MainWindow(QMainWindow):
         """
         右键“保存当前曲线”：
         - 询问名称、颜色（用于左侧历史数据设置展示）
-        - 直接把 self.test_result 整个追加到 tree_config.json 的 saved_history_line
+        - 大数组保存到独立 npz 文件，tree_config.json 只保存管理信息和文件引用
         """
         if not self.test_result:
             QMessageBox.warning(self, "提示", "无测试结果，请先进行测试！")
@@ -414,37 +416,31 @@ class MainWindow(QMainWindow):
             self.logger.error("读取 tree_config.json 失败")
             QMessageBox.warning(self, "错误", "读取配置失败，无法写入。")
             return
-
-        # 4) 计算新索引
+        # 4) 计算新索引；配置文件初始化时已保证 manage_history_line 存在。
         new_index = len(content["line"]["manage_history_line"])
         if new_index >= 10:
             QMessageBox.warning(self, "提示", f"历史数据已达 10 条，最多 10 条，请先删除后再保存。")
             return
 
-        # 5) 深度转换：numpy -> 纯 Python
-        def json_safe(o):
-            # numpy 数组
-            if isinstance(o, np.ndarray):
-                return o.tolist()
-            # numpy 标量
-            if isinstance(o, np.generic):
-                return o.item()
-            # 容器
-            if isinstance(o, dict):
-                return {k: json_safe(v) for k, v in o.items()}
-            if isinstance(o, (list, tuple)):
-                return [json_safe(v) for v in o]
-            # 其它直接返回
-            return o
+        # 5) 曲线数据数组很大，保存到独立压缩文件；tree_config.json 只记录文件引用。
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        # 使用相对 tree_config.json 的路径，源码运行和打包运行时都能通过配置目录定位。
+        data_file = f"history_lines/history_line_{timestamp}_{new_index}.npz"
+        if not utils.save_history_line_data("tree_config.json", data_file, self.test_result):
+            QMessageBox.critical(self, "错误", "保存历史线数据文件失败，请重试。")
+            return
 
-        saved_obj = json_safe(self.test_result)
-        content["line"]["saved_history_line"].append(saved_obj)
+        # 刚保存的数据也放进内存缓存，保存后刷新图表时不用立刻再读一次磁盘。
+        self._history_line_data_cache[data_file] = {
+            key: np.asarray(value) for key, value in self.test_result.items()
+        }
 
         # 6) 展示用信息
         content["line"]["manage_history_line"][str(new_index)] = {
             "state": "True",  # 默认显示
             "colour": colour_str,  # 用户选择的颜色
-            "line_name": name  # 用户输入的名字
+            "line_name": name,  # 用户输入的名字
+            "data_file": data_file  # 当前历史线对应的 npz 数据文件
         }
 
         # 7) 写回
@@ -452,6 +448,8 @@ class MainWindow(QMainWindow):
         if ok:
             QMessageBox.information(self, "成功", f"已保存历史线：{name}\n颜色：{colour_str}\n索引：{new_index}")
         else:
+            # 如果配置写入失败，删除刚生成但没有配置引用的数据文件。
+            utils.delete_history_line_data("tree_config.json", data_file)
             QMessageBox.critical(self, "错误", "写入 tree_config.json 失败，请重试。")
 
         # 8) 刷新配置界面
@@ -1102,21 +1100,42 @@ class MainWindow(QMainWindow):
             self.logger.info("历史线显示总开关为 0，跳过绘制。")
             return
 
-        # 取出 state 为 True 的索引
+        # 取出 state 为 True 的历史线，data_file 和显示信息放在同一个配置项里。
         id_list = []
         for k, v in line["manage_history_line"].items():
             state_val = v.get("state", False)
             line_name = v.get("line_name")
             if state_val == "True":
                 try:
-                    id_list.append((int(k), v.get("colour"), line_name))
+                    id_list.append((int(k), v.get("colour"), line_name, v.get("data_file")))
                 except Exception:
                     self.logger.warning(f"manage_history_line 的键无法转 int: {k}")
         id_list.sort()
-
         self.logger.info(f"启用的历史线序号：{id_list}")
-        for i, colour, line_name in id_list:
-            self.add_history_line(colour, line["saved_history_line"][i], line_name)
+        for i, colour, line_name, data_file in id_list:
+            original_data = self.load_history_line_data(data_file)
+            if original_data is None:
+                self.logger.warning(f"历史线 {i} 数据读取失败，已跳过。")
+                continue
+            self.add_history_line(colour, original_data, line_name)
+
+    def load_history_line_data(self, data_file):
+        """
+        读取一条历史曲线的数据。
+        data_file 是保存在 manage_history_line 单条历史线配置里的 npz 相对路径。
+        """
+        if not data_file:
+            return None
+
+        # 已经加载过的 npz 直接从内存取，减少磁盘 IO。
+        cached = self._history_line_data_cache.get(data_file)
+        if cached is not None:
+            return cached
+
+        data = utils.load_history_line_data("tree_config.json", data_file)
+        if data is not None:
+            self._history_line_data_cache[data_file] = data
+        return data
 
     def add_history_line(self, colour, original_data, line_name):
         text = self.plot_type_selector.currentText()

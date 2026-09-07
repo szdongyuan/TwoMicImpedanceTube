@@ -1,4 +1,3 @@
-import copy
 import re
 
 from PyQt5.QtWidgets import QDialog, QMessageBox, QWidget, QVBoxLayout, QHBoxLayout, QCheckBox, QLabel, QFrame, \
@@ -260,19 +259,17 @@ class ConfigTreeInterface(QDialog):
         if user_choice != QMessageBox.Yes:
             return
         res, content = utils.get_config_content("tree_config.json")
-        backup_content = copy.deepcopy(content)
-        del_result = False
-        write_result = False
 
         if not res:
             QMessageBox.warning(self, "错误", "读取配置失败，无法删除。")
             return
 
-        # 删除历史线和对应数据
-        del content["line"]["manage_history_line"][str(key)]
-        del content["line"]["saved_history_line"][int(key)]
-        del_result = True
+        # data_file 和显示信息放在同一个历史线配置项里，删除前先取出对应 npz 路径。
+        delete_entry = content["line"]["manage_history_line"][str(key)]
+        data_file = delete_entry.get("data_file")
 
+        # 先删除配置里的显示项，等配置写入成功后再删实际 npz 文件。
+        del content["line"]["manage_history_line"][str(key)]
 
         old_lines = content["line"]["manage_history_line"]
         new_lines = {}
@@ -284,30 +281,20 @@ class ConfigTreeInterface(QDialog):
             elif ik > int(key):
                 new_lines[str(ik - 1)] = val  # 仅对后面的 -1
 
+        # 删除中间某条后重新编号，保证下一次新增历史线仍能按连续序号写入。
         content["line"]["manage_history_line"] = new_lines
 
         res = utils.write_config_content("tree_config.json", content)
         if res:
-            write_result = True
-            self.logger.info(f"write_result: True")
-        else:
-            write_result = False
-            self.logger.error(f"write_result: False")
-
-        # 统一判断，必要时回滚
-        if del_result and write_result:
+            if data_file:
+                # 配置已经成功写入，此时可以清理不再被引用的历史曲线数据文件。
+                utils.delete_history_line_data("tree_config.json", data_file)
             self.logger.info(f"已删除历史线 {key}")
             QMessageBox.information(self, "提示", f"{name} 已删除。")
             self.fill_page_2()
             # 通知主窗口刷新 plot3（当前曲线+历史线）
             sign.update_plot3_by_selector_sign.emit("config_tree")
         else:
-            # 回滚
-            rb_ok = utils.write_config_content("tree_config.json", backup_content)
-            if rb_ok:
-                self.logger.error("删除失败，已回滚到原始配置。")
-                QMessageBox.warning(self, "错误", "删除失败，已回滚到删除前状态。")
-            else:
-                # 极端情况：回滚也失败
-                self.logger.critical("删除失败且回滚失败，请手动检查配置文件！")
-                QMessageBox.critical(self, "严重错误", "删除失败且回滚失败，请手动检查配置文件！")
+            # 写入失败时只提示用户，磁盘上的 npz 数据文件会保留。
+            self.logger.error(f"删除历史线 {key} 写入配置失败")
+            QMessageBox.warning(self, "错误", f"{name} 删除失败，配置文件写入失败。")
