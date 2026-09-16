@@ -370,19 +370,72 @@ class MainWindow(QMainWindow):
 
         # 确保“保存当前曲线”只添加一次；若已存在则仅保证信号连接正确
         existing_save_action = None
+        existing_range_action = None
+        existing_reset_range_action = None
         for i in menu.actions():
             if i.text() == "保存当前曲线":
                 existing_save_action = i
-                break
+            elif i.text() == "设置显示范围":
+                existing_range_action = i
+            elif i.text() == "恢复全部范围":
+                existing_reset_range_action = i
 
         if existing_save_action is None:
             act = QAction("保存当前曲线", self)
             act.triggered.connect(self.save_test_result_to_json)
             menu.addAction(act)
-        else:
-            pass
+
+        if existing_range_action is None:
+            act = QAction("设置显示范围", self)
+            act.triggered.connect(self.set_plot3_display_range)
+            menu.addAction(act)
+
+        if existing_reset_range_action is None:
+            act = QAction("恢复全部范围", self)
+            act.triggered.connect(lambda: self.plot3.plotItem.enableAutoRange(axis='xy', enable=True))
+            menu.addAction(act)
         # 弹出完整菜单（自带 X axis 等），自定义按钮也在其中
         menu.exec_(self.plot3.mapToGlobal(pos))
+
+    def set_plot3_display_range(self):
+        text, ok = QInputDialog.getText(
+            self,
+            "设置显示范围",
+            "输入范围：X最小,X最大；可选 Y最小,Y最大\n例如：100,200 或 100,200;1000,20000"
+        )
+        if not ok:
+            return
+
+        text = text.strip().replace("；", ";").replace("，", ",")
+        if not text:
+            return
+
+        parts = [i.strip() for i in text.split(";")]
+        try:
+            if parts[0]:
+                x_min, x_max = self._parse_positive_range(parts[0], "X")
+                self.plot3.setXRange(np.log10(x_min), np.log10(x_max), padding=0)
+
+            if len(parts) > 1 and parts[1]:
+                y_min, y_max = self._parse_positive_range(parts[1], "Y")
+                self.plot3.setYRange(np.log10(y_min), np.log10(y_max), padding=0)
+
+        except ValueError as e:
+            QMessageBox.warning(self, "提示", str(e))
+
+    @staticmethod
+    def _parse_positive_range(text, axis_name):
+        values = [i.strip() for i in text.split(",")]
+        if len(values) != 2:
+            raise ValueError(f"{axis_name}范围格式应为：最小值,最大值")
+
+        start = float(values[0])
+        end = float(values[1])
+        if start <= 0 or end <= 0:
+            raise ValueError(f"{axis_name}范围必须大于 0")
+        if start >= end:
+            raise ValueError(f"{axis_name}最小值必须小于最大值")
+        return start, end
 
     def save_test_result_to_json(self):
         """
@@ -692,7 +745,11 @@ class MainWindow(QMainWindow):
             # 根据目标电压，校准并生成激励信号
             result, data, amplitude, msg = utils.generate_calibrated_signal(self.signal_info, samplerate)
             if result is False:
-                raise ValueError(f"{msg}")
+                self.test_state.setText("缺少输出校准文件")
+                QMessageBox.warning(self, "提示", "缺少输出校准文件，请先进行输入/输出校准。")
+                utils.set_run_button_enabled(self.run_test_button, True)
+                AudioSessionManager.release(self)
+                return
             data = cfg_filter_interface.filter_signal_with_cfg(data, samplerate, cfg)
 
             input_channels = sd.query_devices(sd.default.device[0], 'input')['max_input_channels']
@@ -828,7 +885,13 @@ class MainWindow(QMainWindow):
         time_axis = np.linspace(0, duration, len(self.mic1_pa))
         self.update_time_plot(time_axis, self.mic1_pa, self.mic2_pa)
 
-        mic1_cal_data, mic2_cal_data = self.load_calibration_data()
+        try:
+            mic1_cal_data, mic2_cal_data = self.load_calibration_data()
+        except Exception:
+            self.logger.warning("缺少麦克风校准文件")
+            self.test_state.setText("缺少校准文件")
+            QMessageBox.warning(self, "提示", "缺少校准文件，请先进行麦克风校准。")
+            return
         ff, f, Z_abs, Z_Re, Z_Im, V_abs, V_Re, V_Im = utils.calculate_impedance_velocity(
             mic2=self.mic2_data,
             mic1=self.mic1_data,
