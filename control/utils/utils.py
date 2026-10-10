@@ -416,7 +416,8 @@ def copy_all_configs_to_base_dir():
         "basic_params.json",
         "calibration_coefficients.json",
         "mic_calibration.json",
-        "tree_config.json"
+        "tree_config.json",
+        "speaker_cfg_test.yaml",
     ]
 
     for filename in json_files:
