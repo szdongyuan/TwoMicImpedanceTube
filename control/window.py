@@ -1064,19 +1064,35 @@ class MainWindow(QMainWindow):
         V_Re = 10 ** log_V_Re
         V_Im = 10 ** log_V_Im
 
-        save_dir = QFileDialog.getExistingDirectory(self, "选择保存文件夹")
-        if not save_dir:
+        file1, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存传输阻抗率测试结果",
+            os.path.join(os.getcwd(), "传输阻抗率测试结果.csv"),
+            "CSV 文件 (*.csv);;所有文件 (*)"
+        )
+        if not file1:
             return  # 用户取消
+        if not os.path.splitext(file1)[1]:
+            file1 += ".csv"
+
+        file2, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存质点速度测试结果",
+            os.path.join(os.getcwd(), "质点速度测试结果.csv"),
+            "CSV 文件 (*.csv);;所有文件 (*)"
+        )
+        if not file2:
+            return  # 用户取消
+        if not os.path.splitext(file2)[1]:
+            file2 += ".csv"
 
         try:
-            file1 = os.path.join(save_dir, "传输阻抗率测试结果.csv")
             with open(file1, "w", newline='', encoding='utf-8-sig') as f:
                 writer = csv.writer(f)
                 writer.writerow(["ff", "Z_abs", "Z_Re", "Z_Im"])
                 for i in range(len(line_ff)):
                     writer.writerow([line_ff[i], Z_abs[i], Z_Re[i], Z_Im[i]])
 
-            file2 = os.path.join(save_dir, "质点速度测试结果.csv")
             with open(file2, "w", newline='', encoding='utf-8-sig') as f:
                 writer = csv.writer(f)
                 writer.writerow(["f", "v_abs", "v_Re", "v_Im"])
