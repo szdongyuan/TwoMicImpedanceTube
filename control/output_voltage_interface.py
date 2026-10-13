@@ -241,7 +241,7 @@ class MicoutputVoltageInterface(QDialog):
     def input_calibration(self):
         """
         处理输入电压校准
-        计算 SPL（声压级）并处理其偏差。
+        根据标准声压和录音 RMS 计算麦克风灵敏度，单位 mV/Pa。
         """
         prolong = 1
         samplerate = utils.get_device_info()
@@ -271,19 +271,19 @@ class MicoutputVoltageInterface(QDialog):
             self.record_state.setText("待录制")
             self.record_state.setStyleSheet("color: rgb(255, 170, 0);")
             return
-        # 计算平均声压级（SPL）
         self.average_value = self.calculate_average_spl(recorded_dict, channel_index)
+        print("xxxx")
+        print(self.average_value)
         if self.average_value is None:
             self.record_state.setText("待录制")
             self.record_state.setStyleSheet("color: rgb(255, 170, 0);")
             QtWidgets.QApplication.processEvents()
             return
-        # 计算偏差值
         deviation_value = self.calculate_deviation(self.average_value)
-        self.deviation_lineedit.setText(f"{deviation_value} dBSPL")
-        if str(deviation_value) == "inf":
-            QMessageBox.critical(self, "错误", f"校准失败：偏差值为{deviation_value}")
-            self.logger.error(f"校准失败：偏差值为{deviation_value}")
+        self.deviation_lineedit.setText(f"{deviation_value} mV/Pa")
+        if not np.isfinite(deviation_value) or deviation_value <= 0:
+            QMessageBox.critical(self, "错误", f"校准失败：灵敏度为{deviation_value}")
+            self.logger.error(f"校准失败：灵敏度为{deviation_value}")
         else:
             QMessageBox.information(self, "成功", "校准成功！请保存数据！")
             self.logger.info(f"校准成功！")
@@ -293,24 +293,18 @@ class MicoutputVoltageInterface(QDialog):
 
     def calculate_average_spl(self, recorded_dict, channel_index):
         """
-        计算平均声压级（SPL）。
-        该方法录制音频数据，计算SPL曲线，然后从选定的范围内计算出平均值。
-        参数:
-        recorded_dict - 包含录音信息的字典。
-
-        返回:
-        平均SPL值。
+        保留原函数名：这里返回校准录音的 RMS，用于后续计算 mV/Pa。
         """
         rec_code, recorded_data = SoundcardAudioProcessor().sd_rec(recorded_dict, channel_index)
-        step = 100
+        step = len(recorded_data) // 3
         if rec_code == True:
-            spl_smooth = AudioThdFrequencyResponseAnalysis().spl_calculation(recorded_data)
+            spl_smooth = AudioThdFrequencyResponseAnalysis().spl_calculation(recorded_data, method="rms",
+                                                                             window_size=1201)
             spl_smooth_mid = len(spl_smooth) // 2
             spl_smooth_start = spl_smooth_mid - step
             spl_smooth_end = spl_smooth_mid + step
             spl_sample = spl_smooth[spl_smooth_start:spl_smooth_end]
-            self.average_value = np.sum(spl_sample) / (step * 2)
-            return self.average_value
+            return np.mean(spl_sample)
         else:
             # recorded_data 这里其实是错误信息字符串
             err_msg = recorded_data
@@ -318,20 +312,22 @@ class MicoutputVoltageInterface(QDialog):
             self.logger.error(err_msg)
             return None
 
-
     def calculate_deviation(self, average_value):
         """
-        计算偏差值
+        保留原函数名：根据录音 RMS 和标准声压计算灵敏度，单位 mV/Pa。
         """
         if self.standard_spl_i.isChecked():
             deviation_value = round(94 - average_value, 1)
         else:
             deviation_value = round(114 - average_value, 1)
-        return deviation_value
+        pa_per_v = 10 ** (deviation_value / 20)
+        sensitivity_mv_pa = 1000 / pa_per_v
+        print(f"灵敏度: {sensitivity_mv_pa} mV/Pa")
+        return round(sensitivity_mv_pa, 1)
 
     def save_mic_deviation_value(self):
         """
-        保存 麦克风的偏差值进json
+        保存麦克风灵敏度进 json，单位 mV/Pa。
         """
         selected_channel = self.channel_number.currentText()
         deviation_lineedit_text = self.deviation_lineedit.text()
@@ -352,8 +348,8 @@ class MicoutputVoltageInterface(QDialog):
                 channel_config[selected_channel]['deviation_value'] = deviation_match
                 with open(channel_config_path, "w", encoding="utf-8") as f:
                     json.dump(channel_config, f, ensure_ascii=False, indent=4)
-                    self.logger.info(f"成功保存 {selected_channel} 的偏差值 {deviation_match}")
-                    QMessageBox.information(self, "成功", f"保存成功！{selected_channel} 的偏差值 {deviation_match}！")
+                    self.logger.info(f"成功保存 {selected_channel} 的灵敏度 {deviation_match} mV/Pa")
+                    QMessageBox.information(self, "成功", f"保存成功！{selected_channel} 的灵敏度 {deviation_match} mV/Pa！")
             else:
                 QMessageBox.warning(self, "错误", f"配置中未找到 {selected_channel} 的相关数据")
         except Exception as e:
