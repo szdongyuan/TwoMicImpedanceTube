@@ -271,7 +271,8 @@ class MicoutputVoltageInterface(QDialog):
             self.record_state.setText("待录制")
             self.record_state.setStyleSheet("color: rgb(255, 170, 0);")
             return
-        self.average_value = self.calculate_average_spl(recorded_dict, channel_index)
+        vp = content["basic_params"]["Vp"]
+        self.average_value = self.calculate_average_spl(recorded_dict, channel_index, vp)
         print("xxxx")
         print(self.average_value)
         if self.average_value is None:
@@ -291,7 +292,7 @@ class MicoutputVoltageInterface(QDialog):
         self.record_state.setStyleSheet("color: rgb(255, 170, 0);")
         QtWidgets.QApplication.processEvents()
 
-    def calculate_average_spl(self, recorded_dict, channel_index):
+    def calculate_average_spl(self, recorded_dict, channel_index, vp):
         """
         保留原函数名：这里返回校准录音的 RMS，用于后续计算 mV/Pa。
         """
@@ -299,7 +300,7 @@ class MicoutputVoltageInterface(QDialog):
         step = len(recorded_data) // 3
         if rec_code == True:
             spl_smooth = AudioThdFrequencyResponseAnalysis().spl_calculation(recorded_data, method="rms",
-                                                                             window_size=1201)
+                                                                             window_size=1201, vp = vp)
             spl_smooth_mid = len(spl_smooth) // 2
             spl_smooth_start = spl_smooth_mid - step
             spl_smooth_end = spl_smooth_mid + step
@@ -320,10 +321,9 @@ class MicoutputVoltageInterface(QDialog):
             deviation_value = round(94 - average_value, 1)
         else:
             deviation_value = round(114 - average_value, 1)
-        pa_per_v = 10 ** (deviation_value / 20)
-        sensitivity_mv_pa = 1000 / pa_per_v
-        print(f"灵敏度: {sensitivity_mv_pa} mV/Pa")
-        return round(sensitivity_mv_pa, 1)
+        v2pa_factor = 10 ** (deviation_value / 20)
+        print(f"灵敏度: {v2pa_factor} V/Pa")
+        return round(v2pa_factor, 1)
 
     def save_mic_deviation_value(self):
         """

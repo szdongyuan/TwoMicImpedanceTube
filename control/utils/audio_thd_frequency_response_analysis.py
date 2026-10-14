@@ -14,7 +14,9 @@ class AudioThdFrequencyResponseAnalysis(object):
                         padding_mode: str = "zero",
                         padding_cval: Optional[float] = 0.0,
                         v2pa_factor: Optional[float] = None,
-                        trim_edges: bool = False):
+                        trim_edges: bool = False,
+                        vp = 0
+                        ):
         """
             使用滑动窗口计算声压级 SPL（dB）。
 
@@ -54,7 +56,9 @@ class AudioThdFrequencyResponseAnalysis(object):
             v_amp_list = uniform_filter1d(amplitude_envelope, size=window_size, axis=0, mode=mode, cval=cval)
         else:
             v_amp_list = np.sqrt(uniform_filter1d(signal_float**2, size=window_size, axis=0, mode=mode, cval=cval))
-
+        print("vp: ", vp)
+        dBFs = np.mean(20 * np.log10(np.abs(v_amp_list) * vp))
+        print("dBFs: ", dBFs)
         if not v2pa_factor:
             v2pa_factor = 1
         pa_amp_list = np.asarray(v_amp_list, dtype=float) * v2pa_factor
