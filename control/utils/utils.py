@@ -699,7 +699,8 @@ def refresh_mic_config_json(obj):
             mic_cfg = {
                 f"In{i}": {
                     "deviation_value": "0",
-                    "binding_index": i - 1
+                    "binding_index": i - 1,
+                    "sensitivity": "0"
                 }
                 for i in range(1, count + 1)
             }

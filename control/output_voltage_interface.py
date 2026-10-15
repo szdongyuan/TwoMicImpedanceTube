@@ -1,6 +1,5 @@
 import json
 import os
-import re
 
 import numpy as np
 import sounddevice as sd
@@ -26,6 +25,8 @@ class MicoutputVoltageInterface(QDialog):
         self.play_flag = False
         self.countdown = 10
         self.ui = None
+        self.v2pa_factor = None
+        self.sensitivity = None
         self.logger = LogManager.set_log_handler("输入/输出校准")
         self.init_ui()
         self.init_fun()
@@ -243,6 +244,8 @@ class MicoutputVoltageInterface(QDialog):
         处理输入电压校准
         根据标准声压和录音 RMS 计算麦克风灵敏度，单位 V/Pa。
         """
+        self.v2pa_factor = None
+        self.sensitivity = None
         prolong = 1
         samplerate = utils.get_device_info()
         res, content = utils.get_config_content("basic_params.json")
@@ -290,6 +293,8 @@ class MicoutputVoltageInterface(QDialog):
             QMessageBox.critical(self, "错误", f"校准失败：灵敏度为{sensitivity} V/Pa")
             self.logger.error(f"校准失败：灵敏度为{sensitivity} V/Pa")
         else:
+            self.v2pa_factor, self.sensitivity = v2pa_factor, sensitivity
+            print(self.v2pa_factor, self.sensitivity)
             QMessageBox.information(self, "成功", "校准成功！请保存数据！")
             self.logger.info(f"校准成功！")
         self.record_state.setText("待录制")
@@ -331,16 +336,12 @@ class MicoutputVoltageInterface(QDialog):
 
     def save_mic_deviation_value(self):
         """
-        保存麦克风灵敏度进 json，单位 V/Pa。
+        保存所选通道的偏差值和灵敏度到 json，灵敏度单位 V/Pa。
         """
         selected_channel = self.channel_number.currentText()
-        deviation_lineedit_text = self.deviation_lineedit.text()
-        if not deviation_lineedit_text:
+        if self.v2pa_factor is None or self.sensitivity is None:
             QMessageBox.warning(self, "警告", "请先校准Mic！")
             return
-            # 提取数字部分
-        deviation_match = re.findall(r"[-+]?\d*\.?\d+", deviation_lineedit_text)
-        deviation_match = deviation_match[0] if deviation_match else deviation_lineedit_text
 
         channel_config_path = utils.get_config_path("mic_calibration.json")
         try:
@@ -349,20 +350,23 @@ class MicoutputVoltageInterface(QDialog):
 
             # 检查选中的麦克风是否在配置文件中
             if selected_channel in channel_config:
-                channel_config[selected_channel]['deviation_value'] = deviation_match
+                channel_config[selected_channel]['deviation_value'] = str(self.v2pa_factor)
+                channel_config[selected_channel]['sensitivity'] = str(self.sensitivity)
                 with open(channel_config_path, "w", encoding="utf-8") as f:
                     json.dump(channel_config, f, ensure_ascii=False, indent=4)
-                    self.logger.info(f"成功保存 {selected_channel} 的灵敏度 {deviation_match} V/Pa")
-                    QMessageBox.information(self, "成功", f"保存成功！{selected_channel} 的灵敏度 {deviation_match} V/Pa！")
+                self.logger.info(f"成功保存 {selected_channel} 的偏差值和灵敏度")
+                QMessageBox.information(self, "成功", f"保存成功！{selected_channel} 的偏差值和灵敏度已保存！")
             else:
                 QMessageBox.warning(self, "错误", f"配置中未找到 {selected_channel} 的相关数据")
         except Exception as e:
-            self.logger.error(f"读取配置失败: {e}")
-            QMessageBox.warning(self, "错误", f"读取 {channel_config_path} 配置失败：{e}")
+            self.logger.error(f"保存配置失败: {e}")
+            QMessageBox.warning(self, "错误", f"保存 {channel_config_path} 配置失败：{e}")
 
     def reset_intput_clicked(self):
         self.cal_button.setEnabled(True)
         self.deviation_lineedit.clear()
+        self.v2pa_factor = None
+        self.sensitivity = None
 
     def closeEvent(self, event):
         if self.parent:
