@@ -241,7 +241,7 @@ class MicoutputVoltageInterface(QDialog):
     def input_calibration(self):
         """
         处理输入电压校准
-        根据标准声压和录音 RMS 计算麦克风灵敏度，单位 mV/Pa。
+        根据标准声压和录音 RMS 计算麦克风灵敏度，单位 V/Pa。
         """
         prolong = 1
         samplerate = utils.get_device_info()
@@ -272,19 +272,23 @@ class MicoutputVoltageInterface(QDialog):
             self.record_state.setStyleSheet("color: rgb(255, 170, 0);")
             return
         vp = content["basic_params"]["Vp"]
-        self.average_value = self.calculate_average_spl(recorded_dict, channel_index, vp)
+        self.average_value, dbfs = self.calculate_average_spl(recorded_dict, channel_index, vp)
         print("xxxx")
-        print(self.average_value)
+        print(self.average_value, dbfs)
         if self.average_value is None:
             self.record_state.setText("待录制")
             self.record_state.setStyleSheet("color: rgb(255, 170, 0);")
             QtWidgets.QApplication.processEvents()
             return
-        deviation_value = self.calculate_deviation(self.average_value)
-        self.deviation_lineedit.setText(f"{deviation_value} mV/Pa")
-        if not np.isfinite(deviation_value) or deviation_value <= 0:
-            QMessageBox.critical(self, "错误", f"校准失败：灵敏度为{deviation_value}")
-            self.logger.error(f"校准失败：灵敏度为{deviation_value}")
+        v2pa_factor, sensitivity = self.calculate_deviation(self.average_value, dbfs)
+        print(f"偏差值：{v2pa_factor}, 灵敏度: {sensitivity} V/Pa")
+        self.deviation_lineedit.setText(f"{sensitivity} V/Pa")
+        if not np.isfinite(v2pa_factor) or v2pa_factor <= 0:
+            QMessageBox.critical(self, "错误", f"校准失败：偏差值为{v2pa_factor}")
+            self.logger.error(f"校准失败：偏差值为{v2pa_factor}")
+        elif not np.isfinite(sensitivity) or sensitivity <= 0:
+            QMessageBox.critical(self, "错误", f"校准失败：灵敏度为{sensitivity} V/Pa")
+            self.logger.error(f"校准失败：灵敏度为{sensitivity} V/Pa")
         else:
             QMessageBox.information(self, "成功", "校准成功！请保存数据！")
             self.logger.info(f"校准成功！")
@@ -294,40 +298,40 @@ class MicoutputVoltageInterface(QDialog):
 
     def calculate_average_spl(self, recorded_dict, channel_index, vp):
         """
-        保留原函数名：这里返回校准录音的 RMS，用于后续计算 mV/Pa。
+        保留原函数名：这里返回校准录音的 RMS，用于后续计算 V/Pa。
         """
         rec_code, recorded_data = SoundcardAudioProcessor().sd_rec(recorded_dict, channel_index)
         step = len(recorded_data) // 3
         if rec_code == True:
-            spl_smooth = AudioThdFrequencyResponseAnalysis().spl_calculation(recorded_data, method="rms",
+            spl_smooth, dbfs = AudioThdFrequencyResponseAnalysis().spl_calculation(recorded_data, method="rms",
                                                                              window_size=1201, vp = vp)
             spl_smooth_mid = len(spl_smooth) // 2
             spl_smooth_start = spl_smooth_mid - step
             spl_smooth_end = spl_smooth_mid + step
             spl_sample = spl_smooth[spl_smooth_start:spl_smooth_end]
-            return np.mean(spl_sample)
+            return np.mean(spl_sample), dbfs
         else:
             # recorded_data 这里其实是错误信息字符串
             err_msg = recorded_data
             QMessageBox.critical(self, "录音错误", err_msg)
             self.logger.error(err_msg)
-            return None
+            return None , None
 
-    def calculate_deviation(self, average_value):
+    def calculate_deviation(self, average_value, dbfs):
         """
-        保留原函数名：根据录音 RMS 和标准声压计算灵敏度，单位 mV/Pa。
+        保留原函数名：根据录音 RMS 和标准声压计算灵敏度，单位 V/Pa。
         """
         if self.standard_spl_i.isChecked():
             deviation_value = round(94 - average_value, 1)
         else:
             deviation_value = round(114 - average_value, 1)
+        sensitivity = 10 ** (dbfs / 20)
         v2pa_factor = 10 ** (deviation_value / 20)
-        print(f"灵敏度: {v2pa_factor} V/Pa")
-        return round(v2pa_factor, 1)
+        return round(v2pa_factor, 3), round(sensitivity, 4)
 
     def save_mic_deviation_value(self):
         """
-        保存麦克风灵敏度进 json，单位 mV/Pa。
+        保存麦克风灵敏度进 json，单位 V/Pa。
         """
         selected_channel = self.channel_number.currentText()
         deviation_lineedit_text = self.deviation_lineedit.text()
@@ -348,8 +352,8 @@ class MicoutputVoltageInterface(QDialog):
                 channel_config[selected_channel]['deviation_value'] = deviation_match
                 with open(channel_config_path, "w", encoding="utf-8") as f:
                     json.dump(channel_config, f, ensure_ascii=False, indent=4)
-                    self.logger.info(f"成功保存 {selected_channel} 的灵敏度 {deviation_match} mV/Pa")
-                    QMessageBox.information(self, "成功", f"保存成功！{selected_channel} 的灵敏度 {deviation_match} mV/Pa！")
+                    self.logger.info(f"成功保存 {selected_channel} 的灵敏度 {deviation_match} V/Pa")
+                    QMessageBox.information(self, "成功", f"保存成功！{selected_channel} 的灵敏度 {deviation_match} V/Pa！")
             else:
                 QMessageBox.warning(self, "错误", f"配置中未找到 {selected_channel} 的相关数据")
         except Exception as e:

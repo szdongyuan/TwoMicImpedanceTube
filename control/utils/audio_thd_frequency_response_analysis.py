@@ -57,8 +57,8 @@ class AudioThdFrequencyResponseAnalysis(object):
         else:
             v_amp_list = np.sqrt(uniform_filter1d(signal_float**2, size=window_size, axis=0, mode=mode, cval=cval))
         print("vp: ", vp)
-        dBFs = np.mean(20 * np.log10(np.abs(v_amp_list) * vp))
-        print("dBFs: ", dBFs)
+        dbfs = np.mean(20 * np.log10(np.abs(v_amp_list) * vp))
+        print("dbfs: ", dbfs)
         if not v2pa_factor:
             v2pa_factor = 1
         pa_amp_list = np.asarray(v_amp_list, dtype=float) * v2pa_factor
@@ -66,13 +66,13 @@ class AudioThdFrequencyResponseAnalysis(object):
         spl = 20 * np.log10(pa_amp_list / float(reference_pressure))
 
         if not trim_edges:
-            return spl
+            return spl, dbfs
 
         n = int(signal_float.size)
         w = int(window_size)
         if w <= 1 or w > n:
-            return spl
+            return spl, dbfs
         out_len = n - w + 1
         start = w // 2
         end = start + out_len
-        return spl[start:end]
+        return spl[start:end], dbfs
