@@ -276,15 +276,12 @@ class MicoutputVoltageInterface(QDialog):
             return
         vp = content["basic_params"]["Vp"]
         self.average_value, dbfs = self.calculate_average_spl(recorded_dict, channel_index, vp)
-        print("xxxx")
-        print(self.average_value, dbfs)
         if self.average_value is None:
             self.record_state.setText("待录制")
             self.record_state.setStyleSheet("color: rgb(255, 170, 0);")
             QtWidgets.QApplication.processEvents()
             return
         v2pa_factor, sensitivity = self.calculate_deviation(self.average_value, dbfs)
-        print(f"偏差值：{v2pa_factor}, 灵敏度: {sensitivity} V/Pa")
         self.deviation_lineedit.setText(f"{sensitivity} V/Pa")
         if not np.isfinite(v2pa_factor) or v2pa_factor <= 0:
             QMessageBox.critical(self, "错误", f"校准失败：偏差值为{v2pa_factor}")
@@ -294,7 +291,6 @@ class MicoutputVoltageInterface(QDialog):
             self.logger.error(f"校准失败：灵敏度为{sensitivity} V/Pa")
         else:
             self.v2pa_factor, self.sensitivity = v2pa_factor, sensitivity
-            print(self.v2pa_factor, self.sensitivity)
             QMessageBox.information(self, "成功", "校准成功！请保存数据！")
             self.logger.info(f"校准成功！")
         self.record_state.setText("待录制")
@@ -332,6 +328,10 @@ class MicoutputVoltageInterface(QDialog):
             deviation_value = round(114 - average_value, 1)
         sensitivity = 10 ** (dbfs / 20)
         v2pa_factor = 10 ** (deviation_value / 20)
+        self.logger.info(
+            f"校准偏差值：{deviation_value} dB，系数：{v2pa_factor:.3f}，"
+            f"灵敏度：{sensitivity:.4f} V/Pa"
+        )
         return round(v2pa_factor, 3), round(sensitivity, 4)
 
     def save_mic_deviation_value(self):

@@ -56,9 +56,10 @@ class AudioThdFrequencyResponseAnalysis(object):
             v_amp_list = uniform_filter1d(amplitude_envelope, size=window_size, axis=0, mode=mode, cval=cval)
         else:
             v_amp_list = np.sqrt(uniform_filter1d(signal_float**2, size=window_size, axis=0, mode=mode, cval=cval))
-        print("vp: ", vp)
-        dbfs = np.mean(20 * np.log10(np.abs(v_amp_list) * vp))
-        print("dbfs: ", dbfs)
+        if vp > 0:
+            dbfs = np.mean(20 * np.log10(np.abs(v_amp_list) * vp))
+        else:
+            dbfs = None
         if not v2pa_factor:
             v2pa_factor = 1
         pa_amp_list = np.asarray(v_amp_list, dtype=float) * v2pa_factor
