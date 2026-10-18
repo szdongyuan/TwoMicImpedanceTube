@@ -504,8 +504,9 @@ class MicAdjustInterface(QDialog):
         real_1 = np.max(spl_smooth1)
         spl_smooth2, _ = AudioThdFrequencyResponseAnalysis.spl_calculation(buf[:, mic_binding[1]])
         real_2 = np.max(spl_smooth2)
-        real_spl1 = real_1 + mic_deviation_db[0]
-        real_spl2 = real_2 + mic_deviation_db[1]
+        factor1, factor2 = mic_deviation_db
+        real_spl1 = real_1 + 20 * np.log10(factor1)
+        real_spl2 = real_2 + 20 * np.log10(factor2)
         rms1 = utils.calculate_rms(buf[:, mic_binding[0]])
         rms2 = utils.calculate_rms(buf[:, mic_binding[1]])
         scale1 = utils.calculate_scale(real_spl1, rms1)
