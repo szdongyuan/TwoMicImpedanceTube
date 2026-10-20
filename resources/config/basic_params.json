@@ -1,6 +1,6 @@
 {
     "basic_params": {
-        "soft_value": 8,
+        "soft_value": 19,
         "input_selected_device_id": 10,
         "input_selected_device_name": "ASIO4ALL v2",
         "input_selected_device_type": "ASIO",

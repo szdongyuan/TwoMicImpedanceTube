@@ -2,6 +2,7 @@ import os
 # 必须在导入 sounddevice 之前设置这个环境变量
 os.environ["SD_ENABLE_ASIO"] = "1"
 import sys
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
 
 from control.utils import utils
@@ -9,6 +10,9 @@ from control.window import MainWindow
 
 
 if __name__ == '__main__':
+    # 在 Windows 的 125%/150% 缩放下保持文字、曲线和示意图清晰。
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     utils.copy_all_configs_to_base_dir()
     app = QApplication(sys.argv)
     screen_metrics = utils.get_screen_metrics()
