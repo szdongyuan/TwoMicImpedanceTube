@@ -228,7 +228,7 @@
           </sizepolicy>
          </property>
          <property name="text">
-          <string>待测样品面积S(mm^2)：</string>
+          <string>待测样品面积S&lt;sub&gt;s&lt;/sub&gt;(mm²)：</string>
          </property>
          <property name="alignment">
           <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>

@@ -558,27 +558,10 @@ def delete_history_line_data(config_filename, data_file):
         utils_logger.error(f"删除历史线数据失败: {e}")
         return False
 
-def get_device_info():
-    """获取选择设备的详细信息"""
-    logger = LogManager.set_log_handler("获取设备采样率")
-    try:
-        # 获取默认输入/输出设备 ID（返回的是一个元组）
-        default_input, default_output = sd.default.device
-
-        output_device = sd.query_devices(default_output)
-        # 获取并返回默认采样率
-        name = output_device['name']
-        default_samplerate = int(output_device['default_samplerate'])
-        return default_samplerate
-
-    except Exception as e:
-        logger.info(f"获取采样率失败: {e}")
-        return None
-
 def init_selected_devide():
     """
     初始化输入输出设备。
-    - 从 basic_params.json 读取配置（设备名、类型、采样率）。
+    - 从 basic_params.json 读取配置（设备名、类型）。
     - 在本机设备中查找匹配的输入/输出设备。
     - 找到后设置为默认设备，否则报错。
     """
@@ -593,10 +576,8 @@ def init_selected_devide():
             config = json.load(f)
             input_name = config["basic_params"]["input_selected_device_name"]
             input_type = config["basic_params"]["input_selected_device_type"]
-            input_rate = config["basic_params"]["input_selected_device_samplerate"]
             output_name = config["basic_params"]["output_selected_device_name"]
             output_type = config["basic_params"]["output_selected_device_type"]
-            output_rate = config["basic_params"]["output_selected_device_samplerate"]
             devices = sd.query_devices()
             hostapis = sd.query_hostapis()
 
@@ -608,10 +589,9 @@ def init_selected_devide():
                 if dev["max_input_channels"] > 0:
                     dev_name = dev["name"]
                     dev_type = hostapis[dev["hostapi"]]["name"]
-                    dev_rate = str(int(dev.get("default_samplerate", 0)))
-                    if dev_name == input_name and dev_type == input_type and dev_rate == input_rate:
+                    if dev_name == input_name and dev_type == input_type:
                         input_index = idx
-                        logger.info(f"匹配到输入设备 index={input_index}：{dev_name} ({dev_type}, {dev_rate})")
+                        logger.info(f"匹配到输入设备 index={input_index}：{dev_name} ({dev_type})")
                         break
 
             # 匹配输出设备
@@ -619,10 +599,9 @@ def init_selected_devide():
                 if dev["max_output_channels"] > 0:
                     dev_name = dev["name"]
                     dev_type = hostapis[dev["hostapi"]]["name"]
-                    dev_rate = str(int(dev.get("default_samplerate", 0)))
-                    if dev_name == output_name and dev_type == output_type and dev_rate == output_rate:
+                    if dev_name == output_name and dev_type == output_type:
                         output_index = idx
-                        logger.info(f"匹配到输出设备 index={output_index}：{dev_name} ({dev_type}, {dev_rate})")
+                        logger.info(f"匹配到输出设备 index={output_index}：{dev_name} ({dev_type})")
                         break
             # 如果都匹配到了，则设置默认设备
             if input_index is not None and output_index is not None:
@@ -637,13 +616,15 @@ def init_selected_devide():
 
 
 def save_selected_devices(input_device_index, output_device_index, input_device_name, output_device_name, input_type,
-                          output_type, input_samplerate, output_samplerate, input_channel_count):
+                          output_type, input_channel_count, input_sample_rate, output_sample_rate):
     """
     保存选择的设备信息到 basic_params.json。
     - 打开配置文件并更新输入/输出设备参数。
     - 将修改后的配置写回文件。
     """
     try:
+        if input_sample_rate not in (44100, 48000) or output_sample_rate not in (44100, 48000):
+            raise ValueError("输入和输出设备的采样率只能为 44100 Hz 或 48000 Hz。")
         config_path = get_config_path("basic_params.json")
 
         # 如果文件不存在，直接报错
@@ -662,18 +643,18 @@ def save_selected_devices(input_device_index, output_device_index, input_device_
                 config["basic_params"].get("input_selected_device_id") != input_device_index
                 or config["basic_params"].get("input_selected_device_name") != input_device_name
                 or config["basic_params"].get("input_selected_device_type") != input_type
-                or config["basic_params"].get("input_selected_device_samplerate") != input_samplerate
+                or config["basic_params"].get("input_sample_rate") != input_sample_rate
         ):
             config["basic_params"]["is_clear"] = 1  # 1是清空mic_cal.json
         config["basic_params"]["input_selected_device_id"] = input_device_index
         config["basic_params"]["input_selected_device_name"] = input_device_name
         config["basic_params"]["input_selected_device_type"] = input_type
-        config["basic_params"]["input_selected_device_samplerate"] = input_samplerate
+        config["basic_params"]["input_sample_rate"] = input_sample_rate
 
         config["basic_params"]["output_selected_device_id"] = output_device_index
         config["basic_params"]["output_selected_device_name"] = output_device_name
         config["basic_params"]["output_selected_device_type"] = output_type
-        config["basic_params"]["output_selected_device_samplerate"] = output_samplerate
+        config["basic_params"]["output_sample_rate"] = output_sample_rate
         config["basic_params"]["input_channel_count"] = input_channel_count
         # 写入文件
         with open(config_path, "w", encoding="utf-8") as f:
