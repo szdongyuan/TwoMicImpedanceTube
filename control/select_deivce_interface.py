@@ -48,16 +48,47 @@ class SelectDeviceInterface(QDialog):
         self.refresh_devices.clicked.connect(self.refresh_device_list)
         self.comboBox.setMinimumWidth(self._scaled(350, 180))
         self.comboBox_2.setMinimumWidth(self._scaled(350, 180))
+        self.output_sample_rate_combo.setMinimumWidth(self._scaled(80, 70))
+        self.input_sample_rate_combo.setMinimumWidth(self._scaled(80, 70))
+        self.comboBox.currentIndexChanged.connect(
+            lambda _: self.update_sample_rate(self.comboBox.currentData(), self.output_sample_rate_combo)
+        )
+        self.comboBox_2.currentIndexChanged.connect(
+            lambda _: self.update_sample_rate(self.comboBox_2.currentData(), self.input_sample_rate_combo)
+        )
         # 加永久布局
         self.groupBox_4 = self.findChild(QGroupBox, 'groupBox_4')
         self.channels_layout = QVBoxLayout(self.groupBox_4)
         self.groupBox_4.setLayout(self.channels_layout)
-        self.groupBox_4.setFixedWidth(self._scaled(140, 90))
+        # 为每个麦克风预留灵敏度显示区域。
+        self.groupBox_4.setFixedWidth(self._scaled(290, 190))
         self.groupBox_5.setFixedWidth(self._scaled(180, 130))
         self.vp_line_edit.setFixedWidth(self._scaled(70, 55))
         self.save_vp_button.setFixedWidth(self._scaled(75, 65))
         self.save_vp_button.clicked.connect(self.save_vp_value)
         self.load_vp_value()
+
+    def update_sample_rate(self, device_index, sample_rate_combo):
+        """设备切换时，显示该设备的默认采样率。"""
+        if device_index is None:
+            return
+        sample_rate = int(self.device_list[device_index]["default_samplerate"])
+        if sample_rate in (44100, 48000):
+            sample_rate_combo.setCurrentText(str(sample_rate))
+
+    def load_sample_rates(self):
+        """从设备配置载入输入、输出设备各自的采样率。"""
+        res, config = utils.get_config_content("basic_params.json")
+        if not res:
+            return
+
+        basic_params = config.get("basic_params", {})
+        input_rate = basic_params.get("input_sample_rate")
+        output_rate = basic_params.get("output_sample_rate")
+        if input_rate in (44100, 48000):
+            self.input_sample_rate_combo.setCurrentText(str(input_rate))
+        if output_rate in (44100, 48000):
+            self.output_sample_rate_combo.setCurrentText(str(output_rate))
 
     def load_vp_value(self):
         res, config = utils.get_config_content("basic_params.json")
@@ -176,6 +207,7 @@ class SelectDeviceInterface(QDialog):
 
         self.tableView.setModel(model)
         self._apply_table_sizing()
+        self.load_sample_rates()
         # 自动加载通道
         self.load_channels()
 
@@ -190,15 +222,15 @@ class SelectDeviceInterface(QDialog):
             QMessageBox.critical(self, "读取失败", "无法读取配置文件内容 basic_params.json！")
 
     def add_channels_to_ui(self, channel_count):
-        # 读取 mic_calibration.json 文件，获取每个通道的 binding_index
+        # 读取 mic_calibration.json 文件，获取每个通道的 binding_index 和灵敏度
         res, mic_config = utils.get_config_content("mic_calibration.json")
         if res:
             for i in range(1, channel_count + 1):
-                channel_name = f"In{i}"
+                mic_name = f"Mic{i}"
 
                 row_layout = QHBoxLayout()
                 # 左侧显示通道名
-                channel_label = QLabel(f"Mic{i}:", self)
+                channel_label = QLabel(f"{mic_name}:", self)
                 row_layout.addWidget(channel_label)
                 # 右侧显示对应的 QComboBox
                 combo_box = QComboBox(self)
@@ -208,11 +240,21 @@ class SelectDeviceInterface(QDialog):
                 # 将 In1, In2, In3, In4 等按顺序添加到下拉框
                 for j in range(1, channel_count + 1):
                     combo_box.addItem(f"In{j}")
-                # 获取该通道的 binding_index
-                binding_index = mic_config.get(channel_name, {}).get("binding_index", -1)
+                # 获取该麦克风所绑定通道的 binding_index
+                binding_index = mic_config.get(f"In{i}", {}).get("binding_index", -1)
                 if binding_index != -1:
                     combo_box.setCurrentIndex(binding_index)
                 row_layout.addWidget(combo_box)
+
+                sensitivity_label = QLabel(self)
+                sensitivity_label.setObjectName(f"sensitivity_label_{mic_name}")
+                row_layout.addWidget(sensitivity_label)
+                self.update_mic_sensitivity_label(combo_box, sensitivity_label, mic_config)
+                combo_box.currentTextChanged.connect(
+                    lambda channel_name, label=sensitivity_label: self.update_mic_sensitivity_label(
+                        None, label, mic_config, channel_name
+                    )
+                )
                 self.channels_layout.addLayout(row_layout)
             # 添加保存按钮
             save_channel_button = QPushButton("保存通道设置", self.groupBox_4)
@@ -225,6 +267,13 @@ class SelectDeviceInterface(QDialog):
             self.groupBox_4.update()
         else:
             QMessageBox.critical(self, "读取失败", "无法读取配置文件内容 mic_calibration.json！")
+
+    @staticmethod
+    def update_mic_sensitivity_label(combo_box, sensitivity_label, mic_config, channel_name=None):
+        """显示当前映射通道保存的麦克风灵敏度。"""
+        channel_name = channel_name or combo_box.currentText()
+        sensitivity = mic_config.get(channel_name, {}).get("sensitivity", "0")
+        sensitivity_label.setText(f"{sensitivity} V/Pa")
 
     def clear_layout(self, layout):
         """
@@ -251,6 +300,8 @@ class SelectDeviceInterface(QDialog):
     def save_all_device_settings(self):
         output_index = self.comboBox.currentData()
         input_index = self.comboBox_2.currentData()
+        output_sample_rate = int(self.output_sample_rate_combo.currentText())
+        input_sample_rate = int(self.input_sample_rate_combo.currentText())
 
         if input_index is None or output_index is None:
             QMessageBox.warning(self, "警告", "请选择输入和输出设备")
@@ -275,18 +326,15 @@ class SelectDeviceInterface(QDialog):
             input_type = hostapis[input_device['hostapi']]['name']
             output_type = hostapis[output_device['hostapi']]['name']
 
-            input_samplerate = str(int(input_device.get('default_samplerate', 0)))
-            output_samplerate = str(int(output_device.get('default_samplerate', 0)))
-
             # 获取输入设备的通道数
             input_channel_count = input_device.get('max_input_channels', 0)
 
             utils.save_selected_devices(input_device_index, output_device_index, input_device_name, output_device_name,
-                                        input_type, output_type, input_samplerate, output_samplerate,
-                                        input_channel_count)
+                                        input_type, output_type, input_channel_count,
+                                        input_sample_rate, output_sample_rate)
             # 重载json
             utils.refresh_mic_config_json(self)
-            QMessageBox.information(self, "成功", "输入输出设备保存成功！")
+            QMessageBox.information(self, "成功", "输入输出设备及采样率保存成功！")
             # 刷新选择通道ui
             self.load_channels()
         except Exception as e:

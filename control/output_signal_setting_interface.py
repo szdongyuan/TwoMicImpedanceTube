@@ -130,8 +130,10 @@ class OutputSignalSetInterface(QDialog):
 
     def play_audio(self):
         try:
-            # 获取设备采样率
-            samplerate = utils.get_device_info()
+            res, config = utils.get_config_content("basic_params.json")
+            if not res:
+                raise ValueError("basic_params.json 导入错误")
+            samplerate = int(config["basic_params"]["output_sample_rate"])
             info = {
                 "signal_time": float(self.signal_time.text()),
                 "hz_down": float(self.hz_down.text()),
@@ -153,8 +155,10 @@ class OutputSignalSetInterface(QDialog):
 
     def save_wav(self):
         try:
-            # 获取设备采样率
-            samplerate = utils.get_device_info()
+            res, config = utils.get_config_content("basic_params.json")
+            if not res:
+                raise ValueError("basic_params.json 导入错误")
+            samplerate = int(config["basic_params"]["output_sample_rate"])
             self.signal_info = {
                 "signal_time": float(self.signal_time.text()),
                 "hz_down": float(self.hz_down.text()),
